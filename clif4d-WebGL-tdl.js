@@ -235,7 +235,6 @@ function CreateApp()
             cameraDist: cameraDist
         };
 
-
         var shape = scene .shape;
         var positions = new tdl.primitives.AttribBuffer( 4, shape .points .length );
         for ( var ii = 0; ii < shape .points .length; ++ii )
@@ -252,91 +251,84 @@ function CreateApp()
             indices : indices,
         };
     
-        var model = new tdl.models.Model( scene .program, geometry, null, gl.LINES );
-    
-        scene .render = function ()
-        {
-            for ( var uniform in scene .uniforms ) {
-                scene .program .setUniform( uniform, scene .uniforms[uniform] );
-            }
-            model .drawPrep();
-            model .draw();
-            // Set the alpha to 255.
-            gl .colorMask( false, false, false, true );
-            gl .clearColor( 0, 0, 0, 1 );
-            gl .clear( gl.COLOR_BUFFER_BIT );
-        }
+        scene .model = new tdl.models.Model( scene .program, geometry, null, gl.LINES );
     }
   
     function modelIsReady()
     {
-        return scene && scene .render;
+        return scene && scene .model;
     }
 
     function render()
     {
-        renderBegin( -1 );
-        scene .render();
+        renderView( -1 );
+        if ( stereoView )
+            renderView( 1 );
+    }
+
+    function renderView( eye )
+    {
+        var m4 = fast.matrix4;
+        
+        var borderPercent = 0.027;
+        var width  = Math.floor( canvas.width  * ( ( 1 - 3 * borderPercent ) / 2 ) );
+        var eyeOffset = ( eye + 1 ) / 2;
+        var border = canvas.width * borderPercent;
+        var left   = Math.floor( border * (eyeOffset + 1 ) + width * eyeOffset );
+        var height = Math.floor( canvas.height * 0.9 );
+        var bottom = Math.floor( canvas.height * 0.05 );
+        var aspectRatio = canvas.clientWidth / canvas.clientHeight;
+        
         if ( stereoView )
         {
-            renderBegin( 1 );
-            scene .render();
+            aspectRatio = 0.52 * aspectRatio;
+            gl.viewport( left, bottom, width, height );
+            gl.scissor( left, bottom, width, height );
+            gl.enable( gl.SCISSOR_TEST );
         }
+        
+        // clear the screen.
+        gl.colorMask(true, true, true, true);
+        gl.depthMask(true);
+        gl.clearColor( scene .background[0], scene .background[1], scene .background[2], 0);
+        gl.clearDepth(1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+        
+        gl.enable(gl.CULL_FACE);
+        gl.enable(gl.DEPTH_TEST);
+        
+        // Compute a projection and view matrices.
+        m4.perspective( projection, math .degToRad( 20 ), aspectRatio, 1, 5000 );
+        
+        eyePosition = [ 0, 0, -g_eyeRadius];
+        if ( stereoView )
+        {
+            eyePosition = [ eye * g_eyeRadius * 0.03, 0, -g_eyeRadius];
+            target = [ 0, 0, -g_eyeRadius * 0.2 ];
+        }
+        
+        m4 .lookAt( view, eyePosition, target, up );
+        m4 .mul( viewProjection, view, projection );
+        
+        scene .uniforms .cameraDist = cameraDist;
+        
+        // compute shared matrices
+        m4 .translation( m4t0, [0, 0, 0] );
+        m4 .mul( worldRotation, m4t0, mouseRotationMatrix );
+        m4 .mul( worldViewProjection, worldRotation, viewProjection );
+        
+        m4 .translation( fourDRotation, [0, 0, 0] );
+        
+        for ( var uniform in scene .uniforms ) {
+            scene .program .setUniform( uniform, scene .uniforms[uniform] );
+        }
+        scene .model .drawPrep();
+        scene .model .draw();
+        // Set the alpha to 255.
+        gl .colorMask( false, false, false, true );
+        gl .clearColor( 0, 0, 0, 1 );
+        gl .clear( gl.COLOR_BUFFER_BIT );
     }
-
-  function renderBegin(eye)
-  {
-    var m4 = fast.matrix4;
-
-    var borderPercent = 0.027;
-    var width  = Math.floor( canvas.width  * ( ( 1 - 3 * borderPercent ) / 2 ) );
-    var eyeOffset = ( eye + 1 ) / 2;
-    var border = canvas.width * borderPercent;
-    var left   = Math.floor( border * (eyeOffset + 1 ) + width * eyeOffset );
-    var height = Math.floor( canvas.height * 0.9 );
-    var bottom = Math.floor( canvas.height * 0.05 );
-    var aspectRatio = canvas.clientWidth / canvas.clientHeight;
-
-    if ( stereoView )
-    {
-        aspectRatio = 0.52 * aspectRatio;
-        gl.viewport( left, bottom, width, height );
-        gl.scissor( left, bottom, width, height );
-        gl.enable( gl.SCISSOR_TEST );
-    }
-
-    // clear the screen.
-    gl.colorMask(true, true, true, true);
-    gl.depthMask(true);
-    gl.clearColor( scene .background[0], scene .background[1], scene .background[2], 0);
-    gl.clearDepth(1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-
-    gl.enable(gl.CULL_FACE);
-    gl.enable(gl.DEPTH_TEST);
-
-    // Compute a projection and view matrices.
-    m4.perspective( projection, math .degToRad( 20 ), aspectRatio, 1, 5000 );
-
-    eyePosition = [ 0, 0, -g_eyeRadius];
-    if ( stereoView )
-    {
-        eyePosition = [ eye * g_eyeRadius * 0.03, 0, -g_eyeRadius];
-        target = [ 0, 0, -g_eyeRadius * 0.2 ];
-    }
-
-    m4 .lookAt( view, eyePosition, target, up );
-    m4 .mul( viewProjection, view, projection );
-
-    scene .uniforms .cameraDist = cameraDist;
-
-    // compute shared matrices
-    m4 .translation( m4t0, [0, 0, 0] );
-    m4 .mul( worldRotation, m4t0, mouseRotationMatrix );
-    m4 .mul( worldViewProjection, worldRotation, viewProjection );
-
-    m4 .translation( fourDRotation, [0, 0, 0] );
-  }
 
     return {
         modelReady   : modelIsReady,
