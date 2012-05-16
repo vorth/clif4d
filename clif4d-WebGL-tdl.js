@@ -17,28 +17,45 @@ var fast;                 // the fast math lib.
 
 var g_eyeSpeed          = 0.4;
 var g_eyeHeight         = 2;
-var g_eyeRadius         = 3;
+var g_eyeRadius         = 7;
 
 function CreateApp()
 {
-    window.addEventListener('keypress', handleKeyPress, false);
-        canvas.onmousedown = handleMouseDown;
-        document.onmouseup = handleMouseUp;
-        document.onmousemove = handleMouseMove;
-
-    function handleKeyPress(event)
-    {}
+    var zoom4d = false;
     
+    window .addEventListener( 'keydown', handleKeyDown, false );
+    window .addEventListener( 'keyup', handleKeyUp, false );
+    canvas .onmousedown = handleMouseDown;
+    document .onmouseup = handleMouseUp;
+    document .onmousemove = handleMouseMove;
 
-    var cameraDist = 4.236;
+    function handleKeyDown(event)
+    {
+        if ( event .shiftKey )
+            zoom4d = true;
+    }
+    
+    function handleKeyUp( event )
+    {
+        zoom4d = false;
+    }
+    
+    var tau = ( 1.0 + Math.sqrt( 5.0 ) ) / 2.0;
+    
+    var cameraDist = tau* tau;
 
     function zoom( delta )
     {
-//         if ( g_eyeRadius >= delta )
-//             g_eyeRadius = g_eyeRadius - delta;
-        if ( cameraDist - delta >= 1.0 )
+        if ( zoom4d )
         {
-            cameraDist = cameraDist - delta;
+            delta = delta / 5;
+            if ( cameraDist - delta >= 1.0 )
+                cameraDist = cameraDist - delta;
+        }
+        else
+        {
+            if ( g_eyeRadius >= delta )
+                g_eyeRadius = g_eyeRadius - delta;
         }
     }
     
@@ -310,6 +327,8 @@ function CreateApp()
 
     m4 .lookAt( view, eyePosition, target, up );
     m4 .mul( viewProjection, view, projection );
+
+    scene .uniforms .cameraDist = cameraDist;
 
     // compute shared matrices
     m4 .translation( m4t0, [0, 0, 0] );
