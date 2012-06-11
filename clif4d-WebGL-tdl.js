@@ -229,13 +229,13 @@ function CreateApp()
         }
 
         var fsrequest = new XMLHttpRequest();
-        fsrequest .open( "GET", "clif4d-fragment-shader.glsl" );
-        fsrequest .onreadystatechange = function () {
-            if ( fsrequest .readyState == 4 ) {
-                handleFragmentShader( fsrequest .responseText );
+        fsrequest.open( "GET", "clif4d-fragment-shader.glsl" );
+        fsrequest.onreadystatechange = function () {
+            if ( fsrequest.readyState == 4 ) {
+                handleFragmentShader( fsrequest.responseText );
             }
         }
-        fsrequest .send();
+        fsrequest.send();
 
         var vsrequest = new XMLHttpRequest();
         vsrequest.open( "GET", "clif4d-vertex-shader.glsl" );
