@@ -15,8 +15,6 @@ var canvas;               // the canvas
 var math;                 // the math lib.
 var fast;                 // the fast math lib.
 
-var g_eyeSpeed          = 0.4;
-var g_eyeHeight         = 2;
 var g_eyeRadius         = 7;
 
 function CreateApp()
@@ -42,14 +40,16 @@ function CreateApp()
     
     var tau = ( 1.0 + Math.sqrt( 5.0 ) ) / 2.0;
     
-    var cameraDist = tau* tau;
+    // The commented out value was used for the 120cell model
+    //var cameraDist = tau* tau;
+    var cameraDist = 1;
 
     function zoom( delta )
     {
         if ( zoom4d )
         {
-            delta = delta / 5;
-            if ( cameraDist - delta >= 1.0 )
+            delta = delta / 25;
+            //if ( cameraDist - delta >= 1.0 )
                 cameraDist = cameraDist - delta;
         }
         else
@@ -179,7 +179,7 @@ function CreateApp()
     {
         if ( modelName == "cliffordTorus" )
         {
-            scene = cliffordTorus( scene )
+            scene = Clif4d.CliffordTorus();
         }
         else
         {

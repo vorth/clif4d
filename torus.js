@@ -1,4 +1,6 @@
-cliffordTorus = function () {
+var Clif4d = Clif4d || {};
+
+Clif4d.CliffordTorus = function () {
     scene = {};
     scene.shape = {};
     scene.shape.points = [];
@@ -6,11 +8,14 @@ cliffordTorus = function () {
 
     var n1 = 50;
     var n2 = 50;
-    var r = 0.8;
-    var r1 = 0.4;
+    var r = 1.0;
+    var r1 = 0.5;
     var r2 = r - r1;
     if (r2 < 0)
         r2 = 0;
+
+    r1 *= Math.sqrt(2);
+    r2 *= Math.sqrt(2);
 
     var angleInc1 = 2 * Math.PI / n1;
     var angleInc2 = 2 * Math.PI / n2;
