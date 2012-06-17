@@ -1,6 +1,7 @@
 var Clif4d = Clif4d || {};
 
-Clif4d.CliffordTorus = function () {
+Clif4d.CliffordTorus = function()
+{
     scene = {};
     scene.shape = {};
     scene.shape.points = [];
@@ -21,9 +22,11 @@ Clif4d.CliffordTorus = function () {
     var angleInc2 = 2 * Math.PI / n2;
 
     var angle1 = 0;
-    for (var i = 0; i < n1; i++) {
+    for (var i = 0; i < n1; i++)
+    {
         var angle2 = 0;
-        for (var j = 0; j < n2; j++) {
+        for (var j = 0; j < n2; j++)
+        {
             scene.shape.points.push([r1 * Math.cos(angle1), r1 * Math.sin(angle1), r2 * Math.cos(angle2), r2 * Math.sin(angle2)]);
             if (j > 0)
                 scene.shape.indices.push([i * n1 + j - 1, i * n1 + j]);

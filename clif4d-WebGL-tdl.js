@@ -15,11 +15,12 @@ var canvas;               // the canvas
 var math;                 // the math lib.
 var fast;                 // the fast math lib.
 
-var g_eyeRadius         = 7;
+var g_eyeRadius = 10;
 
 function CreateApp()
 {
     var zoom4d = false;
+    var m_rotationHandler = new Clif4d.RotationHandler4D();
     
     window .addEventListener( 'keydown', handleKeyDown, false );
     window .addEventListener( 'keyup', handleKeyUp, false );
@@ -141,20 +142,14 @@ function CreateApp()
         }
         var newX = event.clientX;
         var newY = event.clientY;
-        
         var deltaX = newX - lastMouseX;
-        var newRotationMatrix = mat4.create();
-        mat4.identity(newRotationMatrix);
-        mat4.rotate(newRotationMatrix, degToRad(deltaX / 3), [0, 1, 0]);
-        
         var deltaY = newY - lastMouseY;
-        mat4.rotate(newRotationMatrix, degToRad(deltaY / 3), [-1, 0, 0]);
-        
-        mat4.multiply( newRotationMatrix, mouseRotationMatrix, mouseRotationMatrix );
-        
-//         var swapXW = mat4.create( new Float32Array([0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0]) );
-//         mat4 .multiply( swapXW, mouseRotationMatrix, fourDRotation );
-        
+
+        var shiftDown = event.shiftKey;
+        var ctrlDown = event.ctrlKey;
+        var normalDrag = !(shiftDown || ctrlDown );
+        m_rotationHandler.MouseDragged( deltaX, -deltaY, normalDrag, shiftDown, ctrlDown );
+
         lastMouseX = newX
         lastMouseY = newY;
     }
@@ -304,30 +299,26 @@ function CreateApp()
         // Compute a projection and view matrices.
         m4.perspective( projection, math .degToRad( 20 ), aspectRatio, 1, 5000 );
         
-        eyePosition = [ 0, 0, -g_eyeRadius];
+        eyePosition = [ 0, 0, g_eyeRadius];
         if ( stereoView )
         {
-            eyePosition = [ eye * g_eyeRadius * 0.03, 0, -g_eyeRadius];
-            target = [ 0, 0, -g_eyeRadius * 0.2 ];
+            eyePosition = [ eye * g_eyeRadius * 0.03, 0, g_eyeRadius];
+            target = [ 0, 0, g_eyeRadius * 0.2 ];
         }
         
         m4 .lookAt( view, eyePosition, target, up );
         m4 .mul( viewProjection, view, projection );
         
-        scene .uniforms .cameraDist = cameraDist;
-        
-        // compute shared matrices
-        m4 .translation( m4t0, [0, 0, 0] );
-        m4 .mul( worldRotation, m4t0, mouseRotationMatrix );
-        m4 .mul( worldViewProjection, worldRotation, viewProjection );
-        
-        m4 .translation( fourDRotation, [0, 0, 0] );
-        
-        for ( var uniform in scene .uniforms ) {
-            scene .program .setUniform( uniform, scene .uniforms[uniform] );
-        }
+        // Setup uniforms.
+        scene.uniforms.worldViewProjection = viewProjection;
+        scene.uniforms.fourDRotation = m_rotationHandler.Current4dView();
+        scene.uniforms.cameraDist = cameraDist;
+        for( var uniform in scene.uniforms ) 
+            scene.program.setUniform( uniform, scene.uniforms[uniform] );
+
         scene .model .drawPrep();
         scene .model .draw();
+
         // Set the alpha to 255.
         gl .colorMask( false, false, false, true );
         gl .clearColor( 0, 0, 0, 1 );
