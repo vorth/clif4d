@@ -7,8 +7,8 @@ Clif4d.CliffordTorus = function()
     scene.shape.points = [];
     scene.shape.indices = [];
 
-    var n1 = 50;
-    var n2 = 50;
+    var n1 = 50; // use 300 to try the curvier lines bug, and uncomment the "% 6" lines below
+    var n2 = 50; // 300 here, too
     var r = 1.0;
     var r1 = 0.5;
     var r2 = r - r1;
