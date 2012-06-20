@@ -129,6 +129,7 @@ function CreateApp()
         var deltaY = newY - lastMouseY;
 
         var shiftDown = event.shiftKey;
+<<<<<<< HEAD
         var altKey = event.altKey;
         var normalDrag = !(shiftDown || altKey );
         var generalDrag = (shiftDown && altKey );
@@ -136,6 +137,11 @@ function CreateApp()
             m_rotationHandler.MouseDraggedGeneral( deltaX, -deltaY );
         else
             m_rotationHandler.MouseDraggedTorus( deltaX, -deltaY, normalDrag, shiftDown, altKey );
+=======
+        var altDown = event.altKey;
+        var normalDrag = !(shiftDown || altDown );
+        m_rotationHandler.MouseDragged( deltaX, -deltaY, normalDrag, shiftDown, altDown );
+>>>>>>> @roice3 now using alt key rather than control key
 
         lastMouseX = newX
         lastMouseY = newY;
