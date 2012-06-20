@@ -28,14 +28,20 @@ Clif4d.CliffordTorus = function()
         for (var j = 0; j < n2; j++)
         {
             scene.shape.points.push([r1 * Math.cos(angle1), r1 * Math.sin(angle1), r2 * Math.cos(angle2), r2 * Math.sin(angle2)]);
-            if (j > 0)
-                scene.shape.indices.push([i * n1 + j - 1, i * n1 + j]);
-            else
-                scene.shape.indices.push([i * n1, i * n1 + n2 - 1]);
-            if (i > 0)
-                scene.shape.indices.push([(i - 1) * n1 + j, i * n1 + j]);
-            else
-                scene.shape.indices.push([j, (n2 - 1) * n1 + j]);
+//            if( j % 6 == 0 )
+            {
+                if (j > 0)
+                    scene.shape.indices.push([i * n1 + j - 1, i * n1 + j]);
+                else
+                    scene.shape.indices.push([i * n1, i * n1 + n2 - 1]);
+            }
+//            if ( i % 6 == 0 )
+            {
+                if (i > 0)
+                    scene.shape.indices.push([(i - 1) * n1 + j, i * n1 + j]);
+                else
+                    scene.shape.indices.push([j, (n2 - 1) * n1 + j]);
+            }
             angle2 = angle2 + angleInc2;
         }
         angle1 = angle1 + angleInc1;

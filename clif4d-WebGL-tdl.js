@@ -225,7 +225,7 @@ function CreateApp()
 
 		if ( ! scene .background )
 		{
-            scene .background = [ 0.6, 0.6, 0.6 ];
+            scene .background = [ 0.9, 0.9, 0.9 ];
 		}
 		
         scene .uniforms = {
