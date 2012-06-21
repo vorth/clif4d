@@ -47,5 +47,39 @@ Clif4d.CliffordTorus = function()
         angle1 = angle1 + angleInc1;
     }
 
+    //
+    // Add in the control lines.
+    // We will do this as a separate shape (when the capability is added in).
+    //
+
+    r1 = r2 = 1;
+    n1 = n2 = 500;
+    angleInc1 = 2 * Math.PI / n1;
+    angleInc2 = 2 * Math.PI / n2;
+
+    var current = scene.shape.points.length;
+
+    angle1 = 0;
+    for( var i=0; i<n1; i++ )
+    {
+        scene.shape.points.push( [r1 * Math.cos(angle1), r1 * Math.sin(angle1), 0, 0] );
+        var idx1 = i;
+        var idx2 = i == n1-1 ? 0 : i+1;
+        scene.shape.indices.push( [idx1+current, idx2+current] );
+        angle1 = angle1 + angleInc1;
+    }
+
+    current = scene.shape.points.length;
+
+    angle2 = 0;
+    for( var j=0; j<n2; j++ )
+    {
+        scene.shape.points.push( [0, 0, r2 * Math.cos(angle2), r2 * Math.sin(angle2)] );
+        var idx1 = j;
+        var idx2 = j == n2-1 ? 0 : j+1;
+        scene.shape.indices.push( [idx1+current, idx2+current] );
+        angle2 = angle2 + angleInc2;
+    }
+
     return scene;
 }
