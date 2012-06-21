@@ -15,7 +15,7 @@ var canvas;               // the canvas
 var math;                 // the math lib.
 var fast;                 // the fast math lib.
 
-var g_eyeRadius = 10;
+var g_eyeRadius = 15;
 
 function CreateApp()
 {
@@ -90,27 +90,12 @@ function CreateApp()
     // pre-allocate a bunch of arrays
     var projection = new Float32Array(16);
     var view = new Float32Array(16);
-    var worldRotation = new Float32Array(16);
     var viewProjection = new Float32Array(16);
     var fourDRotation = new Float32Array(16);
     var worldViewProjection = new Float32Array(16);
-    var viewInverse = new Float32Array(16);
-    var viewProjectionInverse = new Float32Array(16);
-    var mouseRotationInverse = new Float32Array(16);
     var eyePosition = new Float32Array(3);
     var target = new Float32Array(3);
     var up = new Float32Array([0,1,0]);
-    var lightWorldPos = new Float32Array(3);
-    var v3t0 = new Float32Array(3);
-    var v3t1 = new Float32Array(3);
-    var v3t2 = new Float32Array(3);
-    var v3t3 = new Float32Array(3);
-    var m4t0 = new Float32Array(16);
-    var m4t1 = new Float32Array(16);
-    var m4t2 = new Float32Array(16);
-    var m4t3 = new Float32Array(16);
-    var zero4 = new Float32Array(4);
-    var one4 = new Float32Array([1,1,1,1]);
 
     function degToRad(degrees) {
         return degrees * Math.PI / 180;
@@ -119,9 +104,6 @@ function CreateApp()
     var mouseDown = false;
     var lastMouseX = null;
     var lastMouseY = null;
-    
-    var mouseRotationMatrix = mat4.create();
-    mat4.identity(mouseRotationMatrix);
 
     function handleMouseDown(event)
     {
@@ -355,6 +337,9 @@ function initialize()
         tdl.webgl.requestAnimationFrame( render, canvas );
                 
         if ( ! app .modelReady() )
+            return;
+
+        if( !document.hasFocus() )
             return;
 
         // Compute the elapsed time since the last rendered frame
