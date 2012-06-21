@@ -23,7 +23,7 @@ Clif4d.Matrix.GetRow = function( m, i )
 Clif4d.Matrix.SetRow = function( m, i, v )
 {
     for( var j=0; j<4; j++ )
-        m[i*4+j] = v[j];
+        m[i*4 + j] = v[j];
 }
 
 Clif4d.Matrix.GrahamSchmidt = function( m )
@@ -49,24 +49,41 @@ Clif4d.Matrix.GrahamSchmidt = function( m )
 
 Clif4d.RotationHandler4D = function()
 {
-    this.ViewMatrix = tdl.math.matrix4.identity();
+    this.Sensitivity = 0.012;
+    this.TorusMatrix = tdl.math.matrix4.identity();
+    this.GeneralRotationMatrix = tdl.math.matrix4.identity();
 
-    // Access to the current view matrix.
-    this.Current4dView = function()
+    this.GetTorusMatrix = function()
     {
-        return this.ViewMatrix;
+        return this.TorusMatrix;
+    }
+
+    this.GetGeneralMatrix = function()
+    {
+        return this.GeneralRotationMatrix;
+    }
+
+    this.MouseDraggedTorus = function( dx, dy, xz_yz, xw_yw, xy_zw )
+    {
+        this.MouseDraggedInternal( dx, dy, xz_yz, xw_yw, xy_zw, true );
+    }
+
+    this.MouseDraggedGeneral = function( dx, dy ) 
+    {
+        this.MouseDraggedInternal( dx, dy, false, false, false, false );
     }
 
     // Handles updating our rotation matrices based on mouse dragging.
     // dx/dy are the actual displacements of the mouse.
-    // the remaining parameters are booleans, and  control which type of rotation is applied.
-    this.MouseDragged = function( dx, dy, xz_yz, xw_yw, xy_zw )
+    // the following three parameters are booleans, and control which type of rotation is applied.
+    // torusOrGeneral controls which matrix we are updating (true = torus).
+    this.MouseDraggedInternal = function( dx, dy, xz_yz, xw_yw, xy_zw, torusOrGeneral )
     {
         spinDelta = Clif4d.Matrix.Zero();
 
         // Sensitivity/direction.
-        dx *= 0.012;
-        dy *= 0.012;
+        dx *= this.Sensitivity;
+        dy *= this.Sensitivity;
 
         if( xz_yz )
         {
@@ -86,7 +103,7 @@ Clif4d.RotationHandler4D = function()
             spinDelta[3*4 + 1] += dy;
         }
 
-        if( xy_zw )
+        if( xy_zw || !torusOrGeneral )
         {
             spinDelta[0*4 + 1] += dx;
             spinDelta[1*4 + 0] -= dx;
@@ -95,14 +112,18 @@ Clif4d.RotationHandler4D = function()
             spinDelta[2*4 + 3] += dy;
         }
 
-        this.ApplySpinDelta( spinDelta );
+        if( torusOrGeneral )
+            this.TorusMatrix = this.ApplySpinDelta( spinDelta, this.TorusMatrix );
+        else
+            this.GeneralRotationMatrix = this.ApplySpinDelta( spinDelta, this.GeneralRotationMatrix );
     }
     
-    this.ApplySpinDelta = function( spinDelta )
+    this.ApplySpinDelta = function( spinDelta, matrix )
     {
         var delta = tdl.math.addVector( tdl.math.matrix4.identity(), spinDelta );
         delta = Clif4d.Matrix.GrahamSchmidt( delta );
-        this.ViewMatrix = tdl.math.matrix4.mul( delta, this.ViewMatrix );
-        this.ViewMatrix = Clif4d.Matrix.GrahamSchmidt( this.ViewMatrix );
+        matrix = tdl.math.matrix4.mul( delta, matrix );
+        matrix = Clif4d.Matrix.GrahamSchmidt(matrix);
+        return matrix;
     }
 }

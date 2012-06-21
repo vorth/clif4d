@@ -91,7 +91,8 @@ function CreateApp()
     var projection = new Float32Array(16);
     var view = new Float32Array(16);
     var viewProjection = new Float32Array(16);
-    var fourDRotation = new Float32Array(16);
+    var torusRotation = new Float32Array(16);
+    var generalRotation = new Float32Array(16);
     var worldViewProjection = new Float32Array(16);
     var eyePosition = new Float32Array(3);
     var target = new Float32Array(3);
@@ -128,9 +129,13 @@ function CreateApp()
         var deltaY = newY - lastMouseY;
 
         var shiftDown = event.shiftKey;
-        var ctrlDown = event.ctrlKey;
-        var normalDrag = !(shiftDown || ctrlDown );
-        m_rotationHandler.MouseDragged( deltaX, -deltaY, normalDrag, shiftDown, ctrlDown );
+        var altKey = event.altKey;
+        var normalDrag = !(shiftDown || altKey );
+        var generalDrag = (shiftDown && altKey );
+        if( generalDrag )
+            m_rotationHandler.MouseDraggedGeneral( deltaX, -deltaY );
+        else
+            m_rotationHandler.MouseDraggedTorus( deltaX, -deltaY, normalDrag, shiftDown, altKey );
 
         lastMouseX = newX
         lastMouseY = newY;
@@ -212,7 +217,8 @@ function CreateApp()
 		
         scene .uniforms = {
             worldViewProjection: worldViewProjection,
-            fourDRotation: fourDRotation,
+            torusRotation: torusRotation,
+            generalRotation: generalRotation,
             cameraDist: cameraDist
         };
 
@@ -293,7 +299,8 @@ function CreateApp()
         
         // Setup uniforms.
         scene.uniforms.worldViewProjection = viewProjection;
-        scene.uniforms.fourDRotation = m_rotationHandler.Current4dView();
+        scene.uniforms.torusRotation = m_rotationHandler.GetTorusMatrix();
+        scene.uniforms.generalRotation = m_rotationHandler.GetGeneralMatrix();
         scene.uniforms.cameraDist = cameraDist;
         for( var uniform in scene.uniforms ) 
             scene.program.setUniform( uniform, scene.uniforms[uniform] );
