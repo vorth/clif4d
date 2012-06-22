@@ -233,9 +233,15 @@ function CreateApp()
         {
             indices .push( shape .indices[ ii ] );
         }
+        var colors = new tdl.primitives.AttribBuffer( 4, shape .colors .length );
+        for ( var ii = 0; ii < shape .colors .length; ++ii )
+        {
+            colors .push( shape .colors[ ii ] );
+        }
         var geometry = {
             position : positions,
             indices : indices,
+            color : colors,
         };
     
         scene .model = new tdl.models.Model( scene .program, geometry, null, gl.LINES );
