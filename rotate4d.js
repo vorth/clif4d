@@ -84,6 +84,12 @@ Clif4d.RotationHandler4D = function()
         // Sensitivity/direction.
         dx *= this.Sensitivity;
         dy *= this.Sensitivity;
+        
+        if ( ! torusOrGeneral )
+        {
+            dx *= 0.1;
+            dy *= 0.1;
+        }
 
         if( xz_yz )
         {
