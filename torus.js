@@ -29,7 +29,9 @@ Clif4d.CliffordTorus = function()
         for (var j = 0; j < n2; j++)
         {
             scene.shape.points.push( [ r1 * Math.cos(angle1), r1 * Math.sin(angle1), r2 * Math.cos(angle2), r2 * Math.sin(angle2) ] );
-            scene.shape.colors.push( [ 0.0, 0.8, 0.0, 1.0 ] );
+            //scene.shape.colors.push( [ 0.0, 0.8, 0.0, 1.0 ] );
+			//scene.shape.colors.push( [ 0.8, 0.8, 0.8, 1.0 ] );
+			scene.shape.colors.push( [ 0.3, 0.3, 0.3, 1.0 ] );
             {
                 if (i > 0)
                     scene.shape.indices.push( [ (i - 1) * n1 + j, i * n1 + j ] );
@@ -50,7 +52,9 @@ Clif4d.CliffordTorus = function()
         for (var j = 0; j < n2; j++)
         {
             scene.shape.points.push( [ r1 * Math.cos(angle1), r1 * Math.sin(angle1), r2 * Math.cos(angle2), r2 * Math.sin(angle2) ] );
-            scene.shape.colors.push( [ 0.8, 0.0, 0.0, 1.0 ] );
+            //scene.shape.colors.push( [ 0.8, 0.0, 0.0, 1.0 ] );
+			//scene.shape.colors.push( [ 0.8, 0.8, 0.8, 1.0 ] );
+			scene.shape.colors.push( [ 0.3, 0.3, 0.3, 1.0 ] );
             {
                 if (j > 0)
                     scene.shape.indices.push( [ current + i * n1 + j - 1, current + i * n1 + j ] );

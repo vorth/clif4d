@@ -162,6 +162,7 @@ function CreateApp()
         if ( modelName == "cliffordTorus" )
         {
             scene = Clif4d.CliffordTorus();
+			//scene = Clif4d.KleinBottle();
         }
         else
         {
