@@ -1,4 +1,4 @@
-import { createRotationHandler4D } from "/module/rotate4d.js";
+import { createRotationHandler4D } from "../module/rotate4d.js";
 import { cliffordTorus } from "./torus.js";
 
 // tdl scripts are loaded via script tags in index.html since
