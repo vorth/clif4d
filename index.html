@@ -1,27 +1,50 @@
-﻿<!DOCTYPE html>
-<!-- saved from url=(0081)http://webglsamples.googlecode.com/hg/google-io/2011/10000-objects-optimized.html -->
-<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<meta charset="utf-8">
-<title>clif4d</title>
-<link rel="stylesheet" type="text/css" href="style.css">
-<script type="text/javascript" src="./webgl/tdl/base.js"></script>
-<script type="text/javascript" src="./webgl/glMatrix-0.9.5.min.js"></script>
-<script type="text/javascript" src="clif4d-WebGL-tdl.js" ></script>
-<script type="text/javascript" src="torus.js" ></script>
-<script type="text/javascript" src="klein-bottle.js" ></script>
-<script type="text/javascript" src="rotate4d.js" ></script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+                               <title>Clif4d: a 4D Trackball</title>
+  <meta property="og:title"  content="Clif4d: a 4D Trackball">
+  <meta name="twitter:title" content="Clif4d: a 4D Trackball">
+
+  <meta name="description"         content="Clif4d is reusable library for 4D rotation controls, using a Clifford torus rather than a sphere.">
+  <meta property="og:description"  content="Clif4d is reusable library for 4D rotation controls, using a Clifford torus rather than a sphere.">
+  <meta name="twitter:description" content="Clif4d is reusable library for 4D rotation controls, using a Clifford torus rather than a sphere.">
+
+  <meta property="og:url" content="https://vorth.github.io/clif4d/">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <meta property="og:image"  content="https://vorth.github.io/clif4d/media/preview.png">
+  <meta name="twitter:image" content="https://vorth.github.io/clif4d/media/preview.png">
+
+  <link rel="stylesheet" type="text/css" href="/styles.css">
 
 </head>
 <body>
 
-<div id="info"><span><a href="http://threedlibrary.googlecode.com/" target="_blank">tdl.js</a> - clif4d</span></div>
+  <nav>
+    <div class="nav-container">
+      <h1>Clif4d: a 4D Trackball</h1>
+    </div>
+  </nav>
 
-<div id="fpsContainer">
-  <div class="fps">fps: <span id="fps">29</span></div>
-</div>
+  <main class="container">
+    <p>
+      Clif4d is reusable library for 4D rotation controls, using a Clifford torus rather than a sphere.
+    </p>
 
-<div id="viewContainer">
-    <canvas data-four-d-model="cliffordTorus" id="modelView" width="1024" height="1024" style="width: 100%; height: 100%;" />
-</div>
-
-</body></html>
+    <div class="implementations">
+    <a href="/original/" target="_blank" rel="noopener noreferrer">
+      <img src="" alt="">
+      <h2>Original app, using TDL</h2>
+    </a>
+    <a href="/threejs/" target="_blank" rel="noopener noreferrer">
+      <img src="" alt="">
+      <h2>Three.js sample</h2>
+    </a>
+  </div>
+  </main>
+  
+</body>
+</html>

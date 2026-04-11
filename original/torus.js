@@ -1,8 +1,7 @@
-var Clif4d = Clif4d || {};
 
-Clif4d.CliffordTorus = function()
+export const cliffordTorus = function()
 {
-    scene = {};
+    let scene = {};
     scene.shape = {};
     scene.shape.points = [];
     scene.shape.indices = [];

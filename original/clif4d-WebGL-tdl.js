@@ -1,12 +1,8 @@
-tdl.require('tdl.buffers');
-tdl.require('tdl.fast');
-tdl.require('tdl.fps');
-tdl.require('tdl.log');
-tdl.require('tdl.math');
-tdl.require('tdl.models');
-tdl.require('tdl.primitives');
-tdl.require('tdl.programs');
-tdl.require('tdl.webgl');
+import { createRotationHandler4D } from "/module/rotate4d.js";
+import { cliffordTorus } from "./torus.js";
+
+// tdl scripts are loaded via script tags in index.html since
+// tdl.require() uses document.write() which doesn't work in ES modules
 window.onload = initialize;
 
 // globals
@@ -20,7 +16,7 @@ var g_eyeRadius = 15;
 function CreateApp()
 {
     var zoom4d = false;
-    var m_rotationHandler = new Clif4d.RotationHandler4D();
+    var m_rotationHandler = createRotationHandler4D ();
     
     window .addEventListener( 'keydown', handleKeyDown, false );
     window .addEventListener( 'keyup', handleKeyUp, false );
@@ -133,9 +129,9 @@ function CreateApp()
         var normalDrag = !(shiftDown || altKey );
         var generalDrag = (shiftDown && altKey );
         if( generalDrag )
-            m_rotationHandler.MouseDraggedGeneral( deltaX, -deltaY );
+            m_rotationHandler.mouseDraggedGeneral( deltaX, -deltaY );
         else
-            m_rotationHandler.MouseDraggedTorus( deltaX, -deltaY, normalDrag, shiftDown, altKey );
+            m_rotationHandler.mouseDraggedTorus( deltaX, -deltaY, normalDrag, shiftDown, altKey );
 
         lastMouseX = newX
         lastMouseY = newY;
@@ -161,7 +157,7 @@ function CreateApp()
     {
         if ( modelName == "cliffordTorus" )
         {
-            scene = Clif4d.CliffordTorus();
+            scene = cliffordTorus();
 			//scene = Clif4d.KleinBottle();
         }
         else
@@ -306,8 +302,8 @@ function CreateApp()
         
         // Setup uniforms.
         scene.uniforms.worldViewProjection = viewProjection;
-        scene.uniforms.torusRotation = m_rotationHandler.GetTorusMatrix();
-        scene.uniforms.generalRotation = m_rotationHandler.GetGeneralMatrix();
+        scene.uniforms.torusRotation =  m_rotationHandler.getTorusMatrix();
+        scene.uniforms.generalRotation = m_rotationHandler.getGeneralMatrix();
         scene.uniforms.cameraDist = cameraDist;
         for( var uniform in scene.uniforms ) 
             scene.program.setUniform( uniform, scene.uniforms[uniform] );
