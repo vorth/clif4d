@@ -1,11 +1,19 @@
-import { WilsonCPU, WilsonGPU } from "../wilson.js";
+import { WilsonGPU } from "../wilson.js";
 import { commonGlsl } from "./shaders/common.js";
 import { torusGlsl } from "./shaders/torus.js";
+import { createSingleRotationHandler4D, toWilsonMat4 } from "../../module/rotate4d.js";
+
+const identityWilson = [
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1],
+];
 
 function initWilson2() {
     const canvas = document.querySelector("#demo-canvas-2");
     const resolution = 1000;
-    
+
     const shader = /* glsl */ `
 		precision highp float;
 
@@ -24,11 +32,16 @@ function initWilson2() {
 		{
             vec2 fragCoord = (uv * 0.5 + 0.5) * iResolution;
             gl_FragColor = image( fragCoord, iResolution, iTime );
-            
+
             // Debugging
             // gl_FragColor = vec4(1.0, 1.0, 0, 1.0);
 		}
 	`;
+
+    const rotHandler = createSingleRotationHandler4D();
+    let lastClientX = null;
+    let lastClientY = null;
+
     const options = {
         shader,
         uniforms: {
@@ -37,6 +50,8 @@ function initWilson2() {
             c: [0, 1],
             iTime: 0,
             iResolution: [resolution, resolution],
+            generalRotation: identityWilson,
+            planarRotation: identityWilson,
         },
         canvasWidth: resolution,
         onResizeCanvas: drawFrame,
@@ -50,8 +65,32 @@ function initWilson2() {
         useResetButton: true,
         resetButtonIconPath: "../reset.png",
         interactionOptions: {
-            useForPanAndZoom: true,
-            onPanAndZoom: drawFrame,
+            callbacks: {
+                mousedown: ({ event }) => {
+                    lastClientX = event.clientX;
+                    lastClientY = event.clientY;
+                },
+                mouseup: () => {
+                    lastClientX = null;
+                    lastClientY = null;
+                },
+                mousedrag: ({ event }) => {
+                    if (lastClientX === null) return;
+                    const dx = event.clientX - lastClientX;
+                    const dy = event.clientY - lastClientY;
+
+                    const shift = event.shiftKey;
+                    const alt = event.altKey;
+
+                    const normalDrag = !(shift || alt);
+                    const generalDrag = shift && alt;
+
+                    rotHandler.mouseDragged(dx, -dy, normalDrag, shift && !alt, !shift && alt, generalDrag);
+
+                    lastClientX = event.clientX;
+                    lastClientY = event.clientY;
+                },
+            },
         },
         fullscreenOptions: {
             fillScreen: true,
@@ -59,21 +98,9 @@ function initWilson2() {
             enterFullscreenButtonIconPath: "../enter-fullscreen.png",
             exitFullscreenButtonIconPath: "../exit-fullscreen.png",
         },
-        draggableOptions: {
-            draggables: {
-                //c: [0, 1]
-            },
-            callbacks: {
-                drag: ({ id, x, y }) => {
-                    if (id === "c") {
-                        wilson.setUniforms({ c: [x, y] });
-                        wilson.drawFrame();
-                    }
-                }
-            }
-        }
     };
     const wilson = new WilsonGPU(canvas, options);
+
     const startTime = performance.now();
     function drawFrame() {
         wilson.setUniforms({
@@ -81,6 +108,8 @@ function initWilson2() {
             worldSize: [wilson.worldWidth, wilson.worldHeight],
             iTime: (performance.now() - startTime) / 1000,
             iResolution: [wilson.canvasWidth, wilson.canvasHeight],
+            generalRotation: toWilsonMat4(rotHandler.getGeneralMatrix()),
+            planarRotation: toWilsonMat4(rotHandler.getPlanarMatrix()),
         });
         wilson.drawFrame();
         requestAnimationFrame(drawFrame);

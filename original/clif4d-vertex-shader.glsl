@@ -1,6 +1,6 @@
 
 uniform mat4 worldViewProjection;
-uniform mat4 torusRotation;
+uniform mat4 planarRotation;
 uniform mat4 generalRotation;
 uniform float cameraDist;
 
@@ -12,7 +12,7 @@ varying vec4 v_color;
 void main()
 {
     v_color = color;
-    vec4 position3d = position * generalRotation * torusRotation;
+    vec4 position3d = position * generalRotation * planarRotation;
     float denom = cameraDist - position3d.w;
     denom = max( denom, 0.0001 );
     position3d.x = position3d.x / denom;

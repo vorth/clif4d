@@ -87,7 +87,7 @@ function CreateApp()
     var projection = new Float32Array(16);
     var view = new Float32Array(16);
     var viewProjection = new Float32Array(16);
-    var torusRotation = new Float32Array(16);
+    var planarRotation = new Float32Array(16);
     var generalRotation = new Float32Array(16);
     var worldViewProjection = new Float32Array(16);
     var eyePosition = new Float32Array(3);
@@ -131,7 +131,7 @@ function CreateApp()
         if( generalDrag )
             m_rotationHandler.mouseDraggedGeneral( deltaX, -deltaY );
         else
-            m_rotationHandler.mouseDraggedTorus( deltaX, -deltaY, normalDrag, shiftDown, altKey );
+            m_rotationHandler.mouseDraggedPlanar( deltaX, -deltaY, normalDrag, shiftDown, altKey );
 
         lastMouseX = newX
         lastMouseY = newY;
@@ -214,7 +214,7 @@ function CreateApp()
 		
         scene .uniforms = {
             worldViewProjection: worldViewProjection,
-            torusRotation: torusRotation,
+            planarRotation: planarRotation,
             generalRotation: generalRotation,
             cameraDist: cameraDist
         };
@@ -302,7 +302,7 @@ function CreateApp()
         
         // Setup uniforms.
         scene.uniforms.worldViewProjection = viewProjection;
-        scene.uniforms.torusRotation =  m_rotationHandler.getTorusMatrix();
+        scene.uniforms.planarRotation =  m_rotationHandler.getPlanarMatrix();
         scene.uniforms.generalRotation = m_rotationHandler.getGeneralMatrix();
         scene.uniforms.cameraDist = cameraDist;
         for( var uniform in scene.uniforms ) 

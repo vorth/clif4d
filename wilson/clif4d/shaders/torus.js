@@ -7,7 +7,6 @@ float m_timeFactor = 30.0;
 float m_smoothedTime = 0.;
 
 mat4 m_rotIsoclinic90;
-mat4 m_rotZW;
 
 float sphereSdf( vec3 p, float s )
 {
@@ -27,9 +26,12 @@ float planeSdf( vec3 p, vec4 n )
   return dot(p,n.xyz) + n.w;
 }
 
+uniform mat4 generalRotation;
+uniform mat4 planarRotation;
+
 vec4 transform( vec3 p )
 {
-    vec4 p4 = m_rotZW * R3toS3( p );
+    vec4 p4 = generalRotation * planarRotation * R3toS3( p );
     return p4;
 }
 
@@ -84,9 +86,9 @@ float core( vec3 samplePoint, bool second )
     vec4 p41 = vec4( r1, 0., r2, 0. ).zwxy;
 	vec4 p42 = vec4( 0., r1, r2, 0. ).zwxy; 
 	vec4 p43 = vec4( -r1, 0., r2, 0. ).zwxy;
-    p41 = normalize( m_rotZW * p41 );
-	p42 = normalize( m_rotZW * p42 );
-	p43 = normalize( m_rotZW * p43 );
+    p41 = normalize( p41 );
+	p42 = normalize( p42 );
+	p43 = normalize( p43 );
     
     vec3 p1 = S3toR3( p41 );
     vec3 p2 = S3toR3( p42 );
@@ -151,25 +153,9 @@ vec3 shortestDistanceToSurface( vec3 eye, vec3 marchingDirection, float start, f
         vec2 sdf = sceneSdf( current );
         dist = sdf.x;
         
-        // Puncture the torus.
-        /*vec4 p4 = transform( current );
-        vec2 xy = vec2( atan( p4.x, p4.z ), atan( p4.y, p4.w ) );
-        bool skip = false;
-        if( sdf.y < 2. && between( length( xy ) ) )
-        	skip = true;
-
-        if( dist != sdf.x )
-        {
-            sdf.y = 2.;
-            skip = false;
-        }*/
-        
         if( dist < EPSILON ) 
         {
-            //if( skip )
-            //    dist += 2.*EPSILON;
-            //else    
-            	return vec3( 1.0, depth, sdf.y );
+            return vec3( 1.0, depth, sdf.y );
         }
 
         depth += dist;
@@ -245,15 +231,15 @@ vec4 image( in vec2 fragCoord, in vec2 res, in float time )
         0.0,  0.0,  0.0,  1.0,   // column 2
         0.0,  0.0, -1.0,  0.0    // column 3
     );
-    m_rotZW = MatrixToRotateinCoordinatePlane( angle, 2, 3 );
 
     // Setup the view.
     vec3 viewDir = rayDirection(45.0, iResolution.xy, fragCoord);
     float t = iTime;
-    vec3 eye = vec3(-2.,-4.,5.) * 2.1;
-    eye *= rotateX( -angle );
+    //vec3 eye = vec3(-2.,-4.,5.) * 2.1;
+    //eye *= rotateX( -angle );
+    vec3 eye = vec3(0.,0.,1.) * 12.0;
     vec3 lookat = vec3( 0., 0., 0. );
-    mat3 viewToWorld = viewMatrix(eye, lookat, vec3(0.0, 0.0, 1.0));    
+    mat3 viewToWorld = viewMatrix(eye, lookat, vec3(0.0, -1.0, 0.0));    
     vec3 worldDir = viewToWorld * viewDir;
     
     // Raymarch.
