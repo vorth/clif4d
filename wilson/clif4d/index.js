@@ -1,7 +1,7 @@
 import { WilsonGPU } from "../wilson.js";
 import { commonGlsl } from "./shaders/common.js";
 import { torusGlsl } from "./shaders/torus.js";
-import { createSingleRotationHandler4D, toWilsonMat4 } from "../../module/rotate4d.js";
+import { createSingleRotationHandler4D, toRows } from "../../module/rotate4d.js";
 
 const identityWilson = [
     [1, 0, 0, 0],
@@ -108,8 +108,8 @@ function initWilson2() {
             worldSize: [wilson.worldWidth, wilson.worldHeight],
             iTime: (performance.now() - startTime) / 1000,
             iResolution: [wilson.canvasWidth, wilson.canvasHeight],
-            generalRotation: toWilsonMat4(rotHandler.getGeneralMatrix()),
-            planarRotation: toWilsonMat4(rotHandler.getPlanarMatrix()),
+            generalRotation: toRows(rotHandler.getGeneralMatrix()),
+            planarRotation: toRows(rotHandler.getPlanarMatrix()),
         });
         wilson.drawFrame();
         requestAnimationFrame(drawFrame);
