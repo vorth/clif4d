@@ -1,0 +1,14 @@
+{
+  "name": "@vorth/clif4d-a-track-torus",
+  "main": "2b21d929550f550f@386.js",
+  "version": "386.0.0",
+  "homepage": "https://observablehq.com/@vorth/clif4d-a-track-torus",
+  "author": {
+    "name": "Scott Vorthmann",
+    "url": "https://observablehq.com/@vorth"
+  },
+  "type": "module",
+  "peerDependencies": {
+    "@observablehq/runtime": "4 - 5"
+  }
+}

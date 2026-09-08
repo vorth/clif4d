@@ -163,7 +163,7 @@ function CreateApp()
         else
         {
             var request = new XMLHttpRequest();
-            request.open( "GET", modelName + ".json" );
+            request.open( "GET", "./" + modelName + ".clif4d.json" );
             request.onreadystatechange = function () {
                 if (request.readyState == 4) {
                     var foo = 35;
@@ -230,10 +230,18 @@ function CreateApp()
         {
             indices .push( shape .indices[ ii ] );
         }
-        var colors = new tdl.primitives.AttribBuffer( 4, shape .colors .length );
-        for ( var ii = 0; ii < shape .colors .length; ++ii )
+        let colors = new tdl.primitives.AttribBuffer( 4, shape .points .length );
+        if ( shape .colors ?.length > 0 ) {
+            for ( var ii = 0; ii < shape .colors .length; ++ii )
+            {
+                colors .push( shape .colors[ ii ] );
+            }
+        } else
         {
-            colors .push( shape .colors[ ii ] );
+            for ( var ii = 0; ii < shape .points .length; ++ii )
+            {
+                colors .push( (ii<20)? [ 0.9, 0.7, 0.7, 1 ] : [ 0.8, 0.5, 0.0, 1.0 ] );
+            }
         }
         var geometry = {
             position : positions,
