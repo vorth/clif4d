@@ -1,12 +1,8 @@
-tdl.require('tdl.buffers');
-tdl.require('tdl.fast');
-tdl.require('tdl.fps');
-tdl.require('tdl.log');
-tdl.require('tdl.math');
-tdl.require('tdl.models');
-tdl.require('tdl.primitives');
-tdl.require('tdl.programs');
-tdl.require('tdl.webgl');
+import { createRotationHandler4D } from "../module/rotate4d.js";
+import { cliffordTorus } from "./torus.js";
+
+// tdl scripts are loaded via script tags in index.html since
+// tdl.require() uses document.write() which doesn't work in ES modules
 window.onload = initialize;
 
 // globals
@@ -20,7 +16,7 @@ var g_eyeRadius = 15;
 function CreateApp()
 {
     var zoom4d = false;
-    var m_rotationHandler = new Clif4d.RotationHandler4D();
+    var m_rotationHandler = createRotationHandler4D ();
     
     window .addEventListener( 'keydown', handleKeyDown, false );
     window .addEventListener( 'keyup', handleKeyUp, false );
@@ -91,7 +87,7 @@ function CreateApp()
     var projection = new Float32Array(16);
     var view = new Float32Array(16);
     var viewProjection = new Float32Array(16);
-    var torusRotation = new Float32Array(16);
+    var planarRotation = new Float32Array(16);
     var generalRotation = new Float32Array(16);
     var worldViewProjection = new Float32Array(16);
     var eyePosition = new Float32Array(3);
@@ -133,9 +129,9 @@ function CreateApp()
         var normalDrag = !(shiftDown || altKey );
         var generalDrag = (shiftDown && altKey );
         if( generalDrag )
-            m_rotationHandler.MouseDraggedGeneral( deltaX, -deltaY );
+            m_rotationHandler.mouseDraggedGeneral( deltaX, -deltaY );
         else
-            m_rotationHandler.MouseDraggedTorus( deltaX, -deltaY, normalDrag, shiftDown, altKey );
+            m_rotationHandler.mouseDraggedPlanar( deltaX, -deltaY, normalDrag, shiftDown, altKey );
 
         lastMouseX = newX
         lastMouseY = newY;
@@ -161,13 +157,13 @@ function CreateApp()
     {
         if ( modelName == "cliffordTorus" )
         {
-            scene = Clif4d.CliffordTorus();
+            scene = cliffordTorus();
 			//scene = Clif4d.KleinBottle();
         }
         else
         {
             var request = new XMLHttpRequest();
-            request.open( "GET", modelName + ".json" );
+            request.open( "GET", "./" + modelName + ".clif4d.json" );
             request.onreadystatechange = function () {
                 if (request.readyState == 4) {
                     var foo = 35;
@@ -218,7 +214,7 @@ function CreateApp()
 		
         scene .uniforms = {
             worldViewProjection: worldViewProjection,
-            torusRotation: torusRotation,
+            planarRotation: planarRotation,
             generalRotation: generalRotation,
             cameraDist: cameraDist
         };
@@ -234,10 +230,18 @@ function CreateApp()
         {
             indices .push( shape .indices[ ii ] );
         }
-        var colors = new tdl.primitives.AttribBuffer( 4, shape .colors .length );
-        for ( var ii = 0; ii < shape .colors .length; ++ii )
+        let colors = new tdl.primitives.AttribBuffer( 4, shape .points .length );
+        if ( shape .colors ?.length > 0 ) {
+            for ( var ii = 0; ii < shape .colors .length; ++ii )
+            {
+                colors .push( shape .colors[ ii ] );
+            }
+        } else
         {
-            colors .push( shape .colors[ ii ] );
+            for ( var ii = 0; ii < shape .points .length; ++ii )
+            {
+                colors .push( (ii<20)? [ 0.9, 0.7, 0.7, 1 ] : [ 0.8, 0.5, 0.0, 1.0 ] );
+            }
         }
         var geometry = {
             position : positions,
@@ -306,8 +310,8 @@ function CreateApp()
         
         // Setup uniforms.
         scene.uniforms.worldViewProjection = viewProjection;
-        scene.uniforms.torusRotation = m_rotationHandler.GetTorusMatrix();
-        scene.uniforms.generalRotation = m_rotationHandler.GetGeneralMatrix();
+        scene.uniforms.planarRotation =  m_rotationHandler.getPlanarMatrix();
+        scene.uniforms.generalRotation = m_rotationHandler.getGeneralMatrix();
         scene.uniforms.cameraDist = cameraDist;
         for( var uniform in scene.uniforms ) 
             scene.program.setUniform( uniform, scene.uniforms[uniform] );
