@@ -1,3 +1,6 @@
+
+import { createRotationHandler4D, transpose } from "../module/rotate4d.js";
+
 // https://observablehq.com/@vorth/clif4d-a-track-torus@386
 function _1(md){return(
 md`# Clif4d: A Track-Torus
@@ -74,6 +77,8 @@ reusable.
 function _s3Renderer(THREE,vertexShaderText,fragmentShaderText,width,addXyWzSpin,applySpin,addXwYwSpin,addXzYzSpin,invalidation){return(
 function( geometry, canvasWidth, aspect=8/5 ) {
   
+  const m_rotationHandler = createRotationHandler4D ();
+  
   const scene = new THREE.Scene();
   scene.background = new THREE.Color( 0x888888 );
 
@@ -132,35 +137,27 @@ function( geometry, canvasWidth, aspect=8/5 ) {
     }
     const newX = event.clientX
     const newY = event.clientY
-    const sensitivity = 0.012
-    const spinMatrix = new THREE.Matrix4()
+    const sensitivity = 0.42
 
     var deltaX = -( newX - lastMouseX )
     var deltaY = -( newY - lastMouseY )
 
     deltaX *= sensitivity
     deltaY *= sensitivity
-    if( event.shiftKey && event.altKey ) {
-      deltaX *= 0.1
-      deltaY *= 0.1
-      addXyWzSpin( deltaX, deltaY, spinMatrix )
-      generalRotation = applySpin( spinMatrix, generalRotation )
-      
-      element .value = generalRotation.clone()
+    const shiftDown = event.shiftKey;
+    const altKey = event.altKey;
+    const normalDrag = !(shiftDown || altKey );
+    const generalDrag = (shiftDown && altKey );
+    if( generalDrag ) {
+      deltaX *= 5
+      deltaY *= 5
+      m_rotationHandler.mouseDraggedGeneral( deltaX, -deltaY );
+
+      element .value = m_rotationHandler.getGeneralMatrix()
       element .dispatchEvent(new CustomEvent("input"));
     }
-    else if( event.shiftKey ) {
-      addXwYwSpin( deltaX, deltaY, spinMatrix )
-      torusRotation = applySpin( spinMatrix, torusRotation )
-    }
-    else if( event.altKey ) {
-      addXyWzSpin( deltaX, deltaY, spinMatrix )
-      torusRotation = applySpin( spinMatrix, torusRotation )
-    }
-    else {
-      addXzYzSpin( deltaX, deltaY, spinMatrix )
-      torusRotation = applySpin( spinMatrix, torusRotation )
-    }
+    else
+      m_rotationHandler.mouseDraggedPlanar( deltaX, -deltaY, normalDrag, shiftDown, altKey );
 
     lastMouseX = newX
     lastMouseY = newY;
@@ -181,8 +178,8 @@ function( geometry, canvasWidth, aspect=8/5 ) {
     // Since all of our rotation code works in row-major order, but three.js Matrix4.elements
     //   is in column-major order, we do a last-minute transpose here.  We also
     //   do a clone first, so our rotation matrices remain untouched.
-    material.uniforms.torusRotation.value = torusRotation.clone().transpose().elements
-    material.uniforms.generalRotation.value = generalRotation.clone().transpose().elements
+    material.uniforms.torusRotation.value = transpose( m_rotationHandler.getPlanarMatrix() );
+    material.uniforms.generalRotation.value = transpose( m_rotationHandler.getGeneralMatrix() );
     material.uniforms.cameraDist.value = 1.0
     renderer .render( scene, camera );
   }
@@ -191,7 +188,7 @@ function( geometry, canvasWidth, aspect=8/5 ) {
   renderer .render( scene, camera );
   
   // support viewof, to let this control another S3 rendering
-  renderer .domElement .value = generalRotation.clone()
+  renderer .domElement .value = m_rotationHandler.getGeneralMatrix()
     
   return renderer.domElement;
 }

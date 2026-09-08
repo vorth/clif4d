@@ -53,12 +53,20 @@ const gramSchmidt = (m) => {
     return result;
 };
 
-// Convert the internal flat row-major matrix to Wilson's value[row][col] mat4 format.
-export const toWilsonMat4 = (m) => [
+// Convert the internal flat row-major matrix to value[row][col] format.
+export const toRows = (m) => [
     [m[0],  m[1],  m[2],  m[3]],
     [m[4],  m[5],  m[6],  m[7]],
     [m[8],  m[9],  m[10], m[11]],
     [m[12], m[13], m[14], m[15]],
+];
+
+// Convert internal flat row-major matrix to flat column-major matrix (e.g. for three.js Matrix4).
+export const transpose = (m) => [
+    m[0], m[4], m[8],  m[12],
+    m[1], m[5], m[9],  m[13],
+    m[2], m[6], m[10], m[14],
+    m[3], m[7], m[11], m[15],
 ];
 
 
@@ -123,11 +131,11 @@ export const createRotationHandler4D = ( sensitivity = 0.012 ) =>
     let generalRotationMatrix = identity();
 
     const getPlanarMatrix = function () {
-        return planarMatrix;
+        return [ ...planarMatrix ];
     };
 
     const getGeneralMatrix = function () {
-        return generalRotationMatrix;
+        return [ ...generalRotationMatrix ];
     };
 
     const mouseDraggedPlanar = function (dx, dy, xz_yz, xw_yw, xy_zw) {
