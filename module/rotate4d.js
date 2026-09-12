@@ -208,6 +208,19 @@ const axisMapMatrix = (axes) => {
  *   getTorusAngles()                  [θ1, θ2]
  *   reset()
  *   Plane                             the enum, for convenience
+ *
+ * Surface dragging (see "Dragging the surface" below):
+ *   torusPoint(phi1, phi2)            client-frame world point of the torus at those parameters
+ *   grab(phi1, phi2)                  hold the material point at those parameters
+ *   grabNearest(sx, sy, project)      grab the torus point whose projection is nearest (sx, sy)
+ *   dragSurface(dx, dy, project)      move the grabbed point by (dx, dy) on screen; returns [dθ1, dθ2]
+ *   release()
+ *   getGrab()                         [phi1, phi2] or null
+ *
+ * `project(p4)` is supplied by the client: given a 4-vector in the client's
+ * world coordinates, return its screen position [sx, sy] (any consistent
+ * units — the same ones dx/dy are in) and optionally a depth [sx, sy, d]
+ * with smaller d nearer the viewer.
  */
 export const createRotationHandler4D = ({
     sensitivity = 0.012,
@@ -225,7 +238,7 @@ export const createRotationHandler4D = ({
     let stepsSinceOrthonormalize = 0;
     const ORTHONORMALIZE_EVERY = 256;
 
-    const reset = () => { P = identity(); theta1 = 0; theta2 = 0; stepsSinceOrthonormalize = 0; };
+    const reset = () => { P = identity(); theta1 = 0; theta2 = 0; stepsSinceOrthonormalize = 0; grabbed = null; };
 
     const rotate = (angle, plane) => {
         if (!angle) return;
@@ -258,12 +271,141 @@ export const createRotationHandler4D = ({
     const poseInClient = () => mulMat4(M, mulMat4(P, Mt));
     const finish = (C) => (inverse ? transposeMat4(C) : C);
 
+    // -----------------------------------------------------------------------
+    // Dragging the surface
+    // -----------------------------------------------------------------------
+    // A trackball grabs a point and makes it follow the cursor.  The Clifford
+    // torus is parameterized by the two core angles: the material point at
+    // (φ1, φ2) sits, in the torus's body frame, at
+    //     q0 = (cos φ1, sin φ1)/√2 in core plane 1  ⊕  (cos φ2, sin φ2)/√2 in core plane 2
+    // and a T rotation by (dθ1, dθ2) carries it to (φ1+dθ1, φ2+dθ2).  So if
+    // s(φ) is the screen position of the posed point, a mouse displacement δ
+    // should produce the dθ with J·dθ ≈ δ, J = ∂s/∂φ.  J is taken by finite
+    // differences of the client's `project`, and the solve is damped least
+    // squares so an edge-on surface direction absorbs the drag instead of
+    // blowing up.  Sensitivity is not involved: pixels become radians through J.
+
+    const R = Math.SQRT1_2;
+    let grabbed = null;                  // [phi1, phi2] of the held material point
+
+    const torusPoint = (phi1, phi2) => {
+        const q0 = [0, 0, 0, 0];
+        q0[c1a] = R * Math.cos(phi1);  q0[c1b] = R * Math.sin(phi1);
+        q0[c2a] = R * Math.cos(phi2);  q0[c2b] = R * Math.sin(phi2);
+        return mulMat4Vec(poseInClient(), q0);
+    };
+
+    const screenOf = (project, phi1, phi2) => project(torusPoint(phi1, phi2));
+
+    // 2x2 Jacobian of the screen position with respect to (φ1, φ2).
+    const jacobian = (project, phi1, phi2, h = 1e-3) => {
+        const a1 = screenOf(project, phi1 + h, phi2), b1 = screenOf(project, phi1 - h, phi2);
+        const a2 = screenOf(project, phi1, phi2 + h), b2 = screenOf(project, phi1, phi2 - h);
+        return [
+            (a1[0] - b1[0]) / (2*h), (a2[0] - b2[0]) / (2*h),
+            (a1[1] - b1[1]) / (2*h), (a2[1] - b2[1]) / (2*h),
+        ];
+    };
+
+    // Damped least squares: (JᵀJ + λI) dφ = Jᵀ δ, with λ = (damping·σmax)² so
+    // only surface directions much more foreshortened than the best one are
+    // held back; the well-conditioned direction follows the cursor exactly.
+    const solve = (J, dx, dy, damping) => {
+        const [a, b, c, d] = J;
+        const g00 = a*a + c*c, g01 = a*b + c*d, g11 = b*b + d*d;
+        const tr = g00 + g11, dt = g00*g11 - g01*g01;
+        const sigmaMax2 = tr / 2 + Math.sqrt(Math.max(tr*tr / 4 - dt, 0));
+        const lambda = damping * damping * sigmaMax2 + 1e-12;
+        const m00 = g00 + lambda, m11 = g11 + lambda;
+        const r0 = a*dx + c*dy, r1 = b*dx + d*dy;
+        const det = m00*m11 - g01*g01;
+        if (!(det > 0)) return [0, 0];
+        return [(m11*r0 - g01*r1) / det, (m00*r1 - g01*r0) / det];
+    };
+
+    const grab = (phi1, phi2) => { grabbed = [phi1, phi2]; return grabbed; };
+    const release = () => { grabbed = null; };
+    const getGrab = () => (grabbed ? [...grabbed] : null);
+
+    // Grab the torus point whose projection is nearest (sx, sy).  Several
+    // sheets of the surface can lie under one cursor position, so the nearest
+    // coarse-grid candidates are each refined onto the cursor by Newton's
+    // method, and among those that converge the one nearest the viewer wins.
+    // A cursor off the torus grabs the closest surface point.
+    const grabNearest = (sx, sy, project, { grid = 64, candidates = 16, tolerance = 1.5 } = {}) => {
+        const step = 2 * Math.PI / grid;
+        const coarse = [];
+        for (let i = 0; i < grid; i++) for (let j = 0; j < grid; j++) {
+            const phi1 = i * step, phi2 = j * step;
+            const p = screenOf(project, phi1, phi2);
+            coarse.push([Math.hypot(p[0] - sx, p[1] - sy), phi1, phi2]);
+        }
+        coarse.sort((a, b) => a[0] - b[0]);
+
+        const distAt = (phi1, phi2) => { const p = screenOf(project, phi1, phi2); return Math.hypot(p[0] - sx, p[1] - sy); };
+        // Newton with backtracking: a step is only taken if it brings the
+        // point closer, halving it up to a few times otherwise (the inner wall
+        // of the hole is steep on screen, and plain Newton overshoots there).
+        const refine = (phi1, phi2) => {
+            let dist = distAt(phi1, phi2);
+            for (let k = 0; k < 10 && dist > 1e-3; k++) {
+                const p = screenOf(project, phi1, phi2);
+                const J = jacobian(project, phi1, phi2);
+                let [d1, d2] = solve(J, sx - p[0], sy - p[1], 1e-2);
+                let taken = false;
+                for (let t = 0; t < 5; t++) {
+                    const trial = distAt(phi1 + d1, phi2 + d2);
+                    if (trial < dist) { phi1 += d1; phi2 += d2; dist = trial; taken = true; break; }
+                    d1 /= 2; d2 /= 2;
+                }
+                if (!taken) break;
+            }
+            const p = screenOf(project, phi1, phi2);
+            return { phi1, phi2, dist, depth: p[2] ?? 0 };
+        };
+
+        let best = null;                                   // nearest to the viewer among hits
+        let fallback = null;                               // nearest on screen otherwise
+        for (const [, phi1, phi2] of coarse.slice(0, candidates)) {
+            const r = refine(phi1, phi2);
+            if (!fallback || r.dist < fallback.dist) fallback = r;
+            if (r.dist <= tolerance && (!best || r.depth < best.depth)) best = r;
+        }
+        const pick = best ?? fallback;
+        return grab(pick.phi1, pick.phi2);
+    };
+
+    // Move the grabbed material point by (dx, dy) on screen.  Returns the
+    // [dθ1, dθ2] applied.  Each step is clamped so a nearly edge-on surface
+    // can't fling the model.
+    const dragSurface = (dx, dy, project, { maxStep = 0.5, damping = 0.1 } = {}) => {
+        if (!grabbed) return [0, 0];
+        const [phi1, phi2] = grabbed;
+        const s0 = screenOf(project, phi1, phi2);
+        const target = [s0[0] + dx, s0[1] + dy];
+        let d1 = 0, d2 = 0;
+        for (let k = 0; k < 2; k++) {                 // linearize, step, correct once
+            const J = jacobian(project, phi1 + d1, phi2 + d2);
+            const s = screenOf(project, phi1 + d1, phi2 + d2);
+            const [e1, e2] = solve(J, target[0] - s[0], target[1] - s[1], damping);
+            d1 += e1; d2 += e2;
+        }
+        const len = Math.hypot(d1, d2);
+        if (len > maxStep) { d1 *= maxStep / len; d2 *= maxStep / len; }
+        theta1 += d1; theta2 += d2;
+        grabbed = [phi1 + d1, phi2 + d2];   // the held material point moved with the surface
+        return [d1, d2];
+    };
+
     const getTorusMatrix = () => finish(poseInClient());
     const getModelMatrix = () => finish(mulMat4(poseInClient(), coreRotation()));
     const getCoreMatrix  = () => finish(coreRotation());
     const getTorusAngles = () => [theta1, theta2];
 
-    return { rotate, drag, getModelMatrix, getTorusMatrix, getCoreMatrix, getTorusAngles, reset, Plane };
+    return {
+        rotate, drag, getModelMatrix, getTorusMatrix, getCoreMatrix, getTorusAngles, reset, Plane,
+        torusPoint, grab, grabNearest, dragSurface, release, getGrab,
+    };
 };
 
 // ---------------------------------------------------------------------------

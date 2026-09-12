@@ -112,6 +112,23 @@ function( geometry, canvasWidth, aspect=8/5 ) {
     
   const element = renderer .domElement
 
+  // Mouse position relative to the canvas, in CSS pixels.
+  const canvasPixel = (clientX, clientY) => {
+    const rect = element.getBoundingClientRect()
+    return [ clientX - rect.left, clientY - rect.top ]
+  }
+
+  // Screen position (CSS pixels, y down) and depth of a 4D world point,
+  // mirroring the vertex shader: divide by (cameraDist - w), then the camera.
+  const project = (q) => {
+    const denom = Math.max( uniforms.cameraDist.value - q[3], 0.0001 )
+    const p = new THREE.Vector3( q[0] / denom, q[1] / denom, q[2] / denom )
+    const depth = camera.position.z - p.z          // camera looks down -z
+    const ndc = p.project( camera )
+    const rect = element.getBoundingClientRect()
+    return [ (ndc.x + 1) / 2 * rect.width, (1 - ndc.y) / 2 * rect.height, depth ]
+  }
+
   var mouseDown = false
   var lastMouseX = null
   var lastMouseY = null
@@ -126,6 +143,7 @@ function( geometry, canvasWidth, aspect=8/5 ) {
   function handleMouseUp(event)
   {
     mouseDown = false
+    m_rotationHandler.release()
   }
 
   function handleMouseMove(event)
@@ -143,7 +161,12 @@ function( geometry, canvasWidth, aspect=8/5 ) {
     // Same convention as the tdl and Wilson examples.  Plane.XZ carries x toward z;
     // dragging right should carry the near side (+z) toward +x, hence the negations.
     if( shiftDown && altKey ) {
-      m_rotationHandler.drag( -0.5 * dx, Plane.T1, -0.5 * dy, Plane.T2 );   // about the torus's core circles
+      // Surface drag: the torus point under the cursor follows it.
+      const last = canvasPixel( lastMouseX, lastMouseY )
+      const here = canvasPixel( newX, newY )
+      if( ! m_rotationHandler.getGrab() )
+        m_rotationHandler.grabNearest( last[0], last[1], project )
+      m_rotationHandler.dragSurface( here[0] - last[0], here[1] - last[1], project )
 
       element .value = m_rotationHandler.getCoreMatrix()
       element .dispatchEvent(new CustomEvent("input"));
@@ -182,6 +205,7 @@ function( geometry, canvasWidth, aspect=8/5 ) {
   
   // support viewof, to let this control another S3 rendering
   renderer .domElement .value = m_rotationHandler.getCoreMatrix()
+  window.clif4d = { handler: m_rotationHandler, project }   // debug handle
     
   return renderer.domElement;
 }

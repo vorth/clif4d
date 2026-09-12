@@ -129,3 +129,64 @@ test('rejects bad input', () => {
     assert.throws(() => createRotationHandler4D({ axes: ['x', 'y', 'z'] }));
     assert.throws(() => createRotationHandler4D().rotate(1, 'QQ'));
 });
+
+// A stand-in for a renderer's projection: stereographic-ish divide by
+// (cameraDist - w), then an orthographic screen with y down; depth = -z.
+const project = ([x, y, z, w]) => {
+    const d = Math.max(1.5 - w, 1e-4);
+    return [200 * x / d, -200 * y / d, -z / d];
+};
+
+test('torusPoint lies on the posed torus', () => {
+    const h = createRotationHandler4D();
+    h.rotate(0.6, Plane.XZ); h.rotate(-1.1, Plane.YW); h.rotate(0.4, Plane.T1);
+    const inv = transposeMat4(h.getTorusMatrix());
+    for (const [a, b] of [[0, 0], [1.2, 2.5], [4.0, -0.3]]) {
+        const q = mulMat4Vec(inv, h.torusPoint(a, b));
+        assert.ok(Math.abs(norm([q[0], q[1]]) - Math.SQRT1_2) < EPS);
+        assert.ok(Math.abs(norm([q[2], q[3]]) - Math.SQRT1_2) < EPS);
+    }
+});
+
+test('grabNearest recovers a point under the cursor, preferring the front', () => {
+    const h = createRotationHandler4D();
+    h.rotate(0.9, Plane.YZ); h.rotate(0.3, Plane.XW);
+    const target = [0.7, 2.0];
+    const s = project(h.torusPoint(...target));
+    const [p1, p2] = h.grabNearest(s[0], s[1], project);
+    const got = project(h.torusPoint(p1, p2));
+    assert.ok(Math.hypot(got[0] - s[0], got[1] - s[1]) < 0.05, 'projects onto the cursor');
+    assert.ok(got[2] <= s[2] + 1e-6, 'no farther than the target');
+    assert.deepEqual(h.getGrab(), [p1, p2]);
+});
+
+test('dragSurface moves the grabbed point with the cursor and leaves the torus alone', () => {
+    const h = createRotationHandler4D();
+    h.rotate(0.9, Plane.YZ); h.rotate(0.3, Plane.XW);
+    const torusBefore = h.getTorusMatrix();
+    const [g1, g2] = h.grabNearest(40, -30, project);
+    let s = project(h.torusPoint(g1, g2));
+    // Track the cursor across many small steps.
+    let cx = s[0], cy = s[1];
+    for (let i = 0; i < 20; i++) {
+        h.dragSurface(3, 1, project);
+        cx += 3; cy += 1;
+    }
+    const [p1, p2] = h.getGrab();
+    const now = project(h.torusPoint(p1, p2));
+    assert.ok(Math.hypot(now[0] - cx, now[1] - cy) < 0.5, `held point strays ${Math.hypot(now[0] - cx, now[1] - cy)} px`);
+    close(h.getTorusMatrix(), torusBefore, 'torus pose unchanged');
+    const [t1, t2] = h.getTorusAngles();
+    assert.ok(Math.abs(t1) + Math.abs(t2) > 0.05, 'angles actually changed');
+    // The held material point is the original one, carried by the angles.
+    close([p1, p2], [g1 + t1, g2 + t2], 'grab tracks the material point');
+    // Dragging past the silhouette: the surface can't follow, and must not fling.
+    for (let i = 0; i < 100; i++) {
+        const [d1, d2] = h.dragSurface(3, 1, project);
+        assert.ok(Number.isFinite(d1) && Number.isFinite(d2) && Math.hypot(d1, d2) <= 0.5);
+    }
+    close(h.getTorusMatrix(), torusBefore, 'torus pose still unchanged');
+    h.release();
+    assert.equal(h.getGrab(), null);
+    assert.deepEqual(h.dragSurface(5, 5, project), [0, 0]);
+});
