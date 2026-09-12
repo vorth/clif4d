@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build, POLYCHORA, orientForProjection } from './polychora.js';
-import { buildFacets, buildEdges, faceNormal, fitCameraDistance } from './geometry.js';
+import { buildFacets, buildEdges, buildTorusWireframe, faceNormal, facetLevels, fitCameraDistance } from './geometry.js';
 
 const dot = (a, b) => a.reduce((s, c, i) => s + c * b[i], 0);
 const norm = (v) => Math.hypot(...v);
@@ -189,3 +189,73 @@ test('the camera fit frames every edge', () => {
                           `${name}: an edge falls outside the frame`);
     }
 });
+
+// A stand-in for the renderer's projection: stereographic, then a pinhole.
+const pixelProjector = (distance, fov, width) => (q) => {
+    const den = Math.max(1 - q[3], 5e-3);
+    const p = [q[0]/den, q[1]/den, q[2]/den];
+    const focal = (width / 2) / Math.tan(fov * Math.PI / 360);
+    const depth = Math.max(distance - p[2], 1e-6);
+    return [width/2 + p[0]*focal/depth, width/2 - p[1]*focal/depth, depth];
+};
+
+test('facet levels follow how big a face looks, and respect the budget', () => {
+    const p = build('120-cell');
+    const project = pixelProjector(17, 42, 1000);
+    const levels = facetLevels(p, project, { targetEdge: 9, budget: 900000 });
+
+    assert.equal(levels.length, p.faces.length);
+    for (const l of levels) assert.ok(Number.isInteger(l) && l >= 1 && l <= 48);
+
+    // The face whose image is largest must be subdivided at least as much as
+    // the one whose image is smallest — that is the whole point.
+    const screenSize = (face) => {
+        const points = face.map((i) => project(p.vertices[i]));
+        const xs = points.map((s) => s[0]), ys = points.map((s) => s[1]);
+        return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    };
+    let biggest = 0, smallest = 0;
+    p.faces.forEach((face, i) => {
+        if (screenSize(face) > screenSize(p.faces[biggest])) biggest = i;
+        if (screenSize(face) < screenSize(p.faces[smallest])) smallest = i;
+    });
+    assert.ok(levels[biggest] > levels[smallest],
+              `big face got ${levels[biggest]}, small face got ${levels[smallest]}`);
+
+    const triangles = p.faces.reduce((s, f, i) => s + f.length * levels[i] ** 2, 0);
+    assert.ok(triangles <= 900000, `budget blown: ${triangles}`);
+
+    // And a tighter target must ask for more.
+    const finer = facetLevels(p, project, { targetEdge: 4, budget: 900000 });
+    assert.ok(finer.reduce((s, l) => s + l, 0) > levels.reduce((s, l) => s + l, 0));
+});
+
+test('adaptive tessellation is still exactly on each great sphere', () => {
+    const p = build('tesseract');
+    const levels = facetLevels(p, pixelProjector(7.3, 42, 1000), { targetEdge: 9 });
+    const { data, vertexCount, stride } = buildFacets(p, { levels });
+    for (let i = 0; i < vertexCount; i++) {
+        const k = i * stride;
+        const q = [data[k], data[k+1], data[k+2], data[k+3]];
+        const n = [data[k+4], data[k+5], data[k+6], data[k+7]];
+        assert.ok(Math.abs(norm(q) - 1) < 1e-6);
+        assert.ok(Math.abs(dot(q, n)) < 1e-6);
+    }
+});
+
+test('the torus wireframe lies on the Clifford torus, in the handler core planes', () => {
+    const torus = buildTorusWireframe({ lines: 6, samples: 12 });
+    for (let i = 0; i < torus.vertexCount; i++) {
+        const k = i * torus.stride;
+        for (const q of [[data4(torus, k, 0)], [data4(torus, k, 4)]]) {
+            const [x, y, z, w] = q[0];
+            assert.ok(Math.abs(Math.hypot(x, y) - Math.SQRT1_2) < 1e-6, 'off the (x,y) core circle');
+            assert.ok(Math.abs(Math.hypot(z, w) - Math.SQRT1_2) < 1e-6, 'off the (z,w) core circle');
+        }
+    }
+});
+
+function data4(buffer, offset, at) {
+    return [buffer.data[offset+at], buffer.data[offset+at+1],
+            buffer.data[offset+at+2], buffer.data[offset+at+3]];
+}

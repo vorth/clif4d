@@ -37,9 +37,17 @@ Facets are tessellated on S³ by fanning from the face centre and subdividing;
 normalizing barycentric combinations keeps every vertex exactly on the face's
 great sphere, so the fragment shader can take the surface normal from the
 sphere above rather than from the triangles.  The shading is therefore exact
-however coarse the tessellation is — only the silhouette needs subdivision, and
-it needs more than you would guess, since projection stretches a patch by
-1/(1-w)².
+however coarse the tessellation is — only the silhouette needs subdivision.
+
+**Subdivision is variable, and follows the pose.**  Projection stretches a
+patch by 1/(1-w)², so in any given pose a few facets are hundreds of pixels
+across while most are a handful.  `facetLevels` measures each face — projecting
+its boundary arcs and dividing their screen length by a target triangle edge —
+so the outer silhouettes get the subdivision they need and the interior does
+not pay for it.  On the 120-cell that is about a fifth of the triangles of a
+uniform tessellation, and smoother.  It runs when the pose comes to rest
+(mouse-up, after a zoom, on resize), not per frame, and does nothing when the
+levels come back unchanged.
 
 **Transparency is accumulated, not sorted.**  These facets overlap deeply and
 there is no cheap order to draw them in; sorting tens of thousands of curved
@@ -63,6 +71,12 @@ drawn.  The edge pass runs first and writes depth; the facet pass depth-tests
 against it, which is what lets glass in front of a line veil it while the lines
 in front keep their bite.
 
+**The Clifford torus** is drawn with the same ribbon path as the edges, with
+the taper and grain switched off, because a hardware GL line is one pixel wide
+and all but vanishes once the supersampled buffer is resolved.  It writes no
+depth — it is a guide, not an occluder — but the glass in front of it still
+veils it, so it sits in the scene rather than on top of it.
+
 **Orientation.**  Each polytope is turned so the projection pole sits in a deep
 hole of its vertex set — the centre of a cell.  That keeps any vertex off the
 pole, keeps most facets bounded, and puts the antipodal cell centre at the
@@ -73,7 +87,7 @@ origin, which is the centred, cell-first view these are usually drawn in.
 | | |
 |---|---|
 | `polychora.js` | the six polytopes: vertices on S³, edges, face cycles, and the cell-first orientation |
-| `geometry.js` | tessellation of facets, ribbon geometry for edges, the Clifford torus wireframe, camera fitting |
+| `geometry.js` | tessellation of facets, per-face subdivision levels, ribbon geometry for edges, the Clifford torus wireframe, camera fitting |
 | `render.js` | WebGL2: the three passes, the shaders, the style |
 | `index.js` | rotation handler, mouse, controls |
 | `polychora.test.js` | `node --test polychora/polychora.test.js` |

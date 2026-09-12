@@ -25,11 +25,19 @@
     </label>
 
     <label>Transparency
-      <input type="range" id="opacity" min="0.02" max="0.6" step="0.01" value="0.15">
+      <input type="range" id="opacity" min="0" max="1" step="0.005" value="0.5">
     </label>
 
     <label>Pen weight
       <input type="range" id="pen" min="0" max="8" step="0.1" value="4.0">
+    </label>
+
+    <label>Detail
+      <select id="detail">
+        <option value="14">lighter</option>
+        <option value="9" selected>normal</option>
+        <option value="5">finer</option>
+      </select>
     </label>
 
     <label>Clifford torus
@@ -38,6 +46,10 @@
         <option value="always">always</option>
         <option value="never">never</option>
       </select>
+    </label>
+
+    <label>Torus weight
+      <input type="range" id="torus-opacity" min="0.05" max="1" step="0.05" value="0.5">
     </label>
 
     <div class="row">

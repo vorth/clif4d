@@ -29,15 +29,29 @@ const DETAIL = {
 };
 
 let fitDistance = DEFAULT_STYLE.cameraDistance;
+let describe = () => '';
+
+const showStatus = () => { status.textContent = describe(); };
 
 const loadModel = (name) => {
     const polytope = build(name);
     const stats = renderer.setModel(polytope, { ...DETAIL[name], strokes: 2 });
     fitDistance = stats.fitDistance;
     renderer.setStyle({ cameraDistance: fitDistance });
-    status.textContent = `${polytope.schlafli} · ${polytope.vertices.length} vertices · `
+    describe = () => `${polytope.schlafli} · ${polytope.vertices.length} vertices · `
         + `${polytope.edges.length} edges · ${polytope.faces.length} faces · `
-        + `${stats.triangles.toLocaleString()} triangles`;
+        + `${renderer.getTriangles().toLocaleString()} triangles`;
+    showStatus();
+};
+
+// Retessellate for the pose we have come to rest in, rather than every frame.
+let refineTimer = null;
+const refineSoon = (delay = 120) => {
+    clearTimeout(refineTimer);
+    refineTimer = setTimeout(() => {
+        renderer.refine(new Float32Array(transpose(handler.getModelMatrix())));
+        showStatus();
+    }, delay);
 };
 
 // ---------------------------------------------------------------------------
@@ -64,6 +78,7 @@ canvas.addEventListener('mousedown', (event) => {
 });
 
 document.addEventListener('mouseup', () => {
+    if (dragging) refineSoon(0);
     dragging = false; grabbing = false; handler.release();
 });
 
@@ -89,6 +104,7 @@ canvas.addEventListener('wheel', (event) => {
     const style = renderer.getStyle();
     const distance = Math.min(40, Math.max(2.2, style.cameraDistance * Math.exp(event.deltaY * 0.001)));
     renderer.setStyle({ cameraDistance: distance });
+    refineSoon(200);
     event.preventDefault();
 }, { passive: false });
 
@@ -110,15 +126,32 @@ for (const name of Object.keys(POLYCHORA)) {
     modelSelect.appendChild(option);
 }
 modelSelect.value = '120-cell';
-control('#model', (e) => loadModel(e.target.value), 'change');
+control('#model', (e) => { loadModel(e.target.value); refineSoon(0); }, 'change');
 
 document.querySelector('#colour').value = rgbToHex(DEFAULT_STYLE.base);
 control('#colour', (e) => renderer.setStyle({ base: hexToRgb(e.target.value) }));
-control('#opacity', (e) => renderer.setStyle({ opacity: Number(e.target.value) }));
+// Glass opacity spans two and a half decades, and the interesting end is the
+// thin one, so the slider is logarithmic: 0 -> 0.004, 1 -> 0.6.
+const OPACITY_MIN = 0.004, OPACITY_MAX = 0.6;
+const sliderToOpacity = (t) => OPACITY_MIN * Math.pow(OPACITY_MAX / OPACITY_MIN, Number(t));
+const opacityToSlider = (a) => Math.log(a / OPACITY_MIN) / Math.log(OPACITY_MAX / OPACITY_MIN);
+document.querySelector('#opacity').value = opacityToSlider(DEFAULT_STYLE.opacity);
+control('#opacity', (e) => renderer.setStyle({ opacity: sliderToOpacity(e.target.value) }));
+
+document.querySelector('#torus-opacity').value = DEFAULT_STYLE.torusOpacity;
+control('#torus-opacity', (e) => renderer.setStyle({ torusOpacity: Number(e.target.value) }));
+control('#detail', (e) => {
+    renderer.setStyle({ targetEdge: Number(e.target.value) });
+    refineSoon(0);
+}, 'change');
 control('#pen', (e) => renderer.setStyle({ strokeWidth: Number(e.target.value) }));
 control('#facets', (e) => renderer.setStyle({ showFacets: e.target.checked }), 'change');
 control('#edges', (e) => renderer.setStyle({ showEdges: e.target.checked }), 'change');
-control('#reset', () => { handler.reset(); applyRestPose(); renderer.setStyle({ cameraDistance: fitDistance }); }, 'click');
+control('#reset', () => {
+    handler.reset(); applyRestPose();
+    renderer.setStyle({ cameraDistance: fitDistance });
+    refineSoon(0);
+}, 'click');
 
 const torusMode = document.querySelector('#torus');
 
@@ -135,6 +168,7 @@ const applyRestPose = () => {
 
 loadModel(modelSelect.value);
 applyRestPose();
+refineSoon(0);
 
 const frame = () => {
     const showTorus = torusMode.value === 'always' || (torusMode.value === 'drag' && grabbing);
@@ -143,7 +177,7 @@ const frame = () => {
 };
 requestAnimationFrame(frame);
 
-window.addEventListener('resize', () => renderer.resize());
+window.addEventListener('resize', () => { renderer.resize(); refineSoon(300); });
 
 // Debug handle: window.clif4d.handler / .project from the console.
 window.clif4d = { handler, renderer, project: renderer.project };

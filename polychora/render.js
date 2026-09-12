@@ -33,7 +33,7 @@
 // width and a little grain along its length, so an edge reads as a drawn mark
 // rather than a tube.
 
-import { buildFacets, buildEdges, buildTorusWireframe, fitCameraDistance } from './geometry.js';
+import { buildFacets, buildEdges, buildTorusWireframe, facetLevels, fitCameraDistance } from './geometry.js';
 
 // The stereographic projection R^3 ← S^3 divides by (1 - w), matching the
 // other clif4d examples.  The clamp keeps geometry at the pole finite.
@@ -100,7 +100,7 @@ const EDGE_VS = /* glsl */ `#version 300 es
     uniform mat4 uRotation4d;
     uniform mat4 uViewProjection;
     uniform vec2 uViewport;
-    uniform float uStrokeWidth, uInkOpacity;
+    uniform float uStrokeWidth, uInkOpacity, uArtistic;
     out float vSide, vHalfWidth, vAlpha;
     ${PROJECT_GLSL}
 
@@ -127,10 +127,11 @@ const EDGE_VS = /* glsl */ `#version 300 es
 
         // A drawn mark: tapered at both ends, with a slow wobble and a faster
         // tremor in the width, and a little dry grain in the ink.
+        // uArtistic 0 turns all of that off, for the torus guide lines.
         float phase = seed * 6.2831853;
-        float taper = 0.3 + 0.7 * pow(max(sin(3.1415927 * t), 0.0), 0.5);
-        float wobble = 1.0 + 0.22 * sin(6.2831853 * 2.5 * t + phase)
-                           + 0.12 * sin(6.2831853 * 6.3 * t + 2.1 * phase);
+        float taper = mix(1.0, 0.3 + 0.7 * pow(max(sin(3.1415927 * t), 0.0), 0.5), uArtistic);
+        float wobble = 1.0 + uArtistic * (0.22 * sin(6.2831853 * 2.5 * t + phase)
+                                        + 0.12 * sin(6.2831853 * 6.3 * t + 2.1 * phase));
         float thin = stroke < 0.5 ? 1.0 : 0.45;
         float halfWidth = max(uStrokeWidth * 0.5 * taper * wobble * thin, 0.35);
         float offset = stroke < 0.5 ? 0.0 : 0.8 * halfWidth * (mod(stroke, 2.0) < 0.5 ? -1.0 : 1.0);
@@ -138,8 +139,8 @@ const EDGE_VS = /* glsl */ `#version 300 es
         vec2 pixel = s + normal * (offset + side * halfWidth);
         gl_Position = vec4((pixel / uViewport * 2.0 - 1.0) * here.w, here.z, here.w);
 
-        float grain = 0.78 + 0.22 * sin(6.2831853 * 4.1 * t + 0.7 * phase)
-                                  * sin(6.2831853 * 9.7 * t + phase);
+        float grain = 1.0 - uArtistic * 0.22 * (1.0 - sin(6.2831853 * 4.1 * t + 0.7 * phase)
+                                                    * sin(6.2831853 * 9.7 * t + phase));
         vSide = side;
         vHalfWidth = halfWidth;
         vAlpha = uInkOpacity * (stroke < 0.5 ? 1.0 : 0.45) * grain;
@@ -157,22 +158,6 @@ const EDGE_FS = /* glsl */ `#version 300 es
         if (a < 0.12) discard;              // keep faint fringes out of the depth buffer
         fragColor = vec4(uInkColor, a);
     }
-`;
-
-const TORUS_VS = /* glsl */ `#version 300 es
-    precision highp float;
-    in vec4 aPosition;
-    uniform mat4 uRotation4d, uViewProjection;
-    ${PROJECT_GLSL}
-    void main() { gl_Position = uViewProjection * vec4(stereo(uRotation4d * aPosition), 1.0); }
-`;
-
-const TORUS_FS = /* glsl */ `#version 300 es
-    precision highp float;
-    uniform vec3 uInkColor;
-    uniform float uAlpha;
-    out vec4 fragColor;
-    void main() { fragColor = vec4(uInkColor, uAlpha); }
 `;
 
 const COMPOSITE_VS = /* glsl */ `#version 300 es
@@ -212,7 +197,7 @@ const COMPOSITE_FS = /* glsl */ `#version 300 es
 `;
 
 // Exported so the offscreen test harness can compile and run the real shaders.
-export const SHADER_SOURCE = { FACET_VS, FACET_FS, EDGE_VS, EDGE_FS, TORUS_VS, TORUS_FS, COMPOSITE_VS, COMPOSITE_FS };
+export const SHADER_SOURCE = { FACET_VS, FACET_FS, EDGE_VS, EDGE_FS, COMPOSITE_VS, COMPOSITE_FS };
 
 // ---------------------------------------------------------------------------
 // Small matrix helpers (column-major, the order WebGL wants)
@@ -271,10 +256,13 @@ export const DEFAULT_STYLE = {
     rim:        [1.000, 0.970, 0.900],
     ink:        [0.180, 0.150, 0.118],
     light:      [-0.45, 0.75, 0.55],
-    opacity:    0.15,         // face-on opacity of one sheet of glass
+    opacity:    0.05,         // face-on opacity of one sheet of glass
     rimOpacity: 0.60,         // how much grazing angles close the glass up
     strokeWidth: 4.0,         // pixels, before the taper
     inkOpacity: 1.0,
+    torusWidth: 1.6,          // pixels; the Clifford torus guide lines
+    torusOpacity: 0.45,
+    targetEdge: 9,            // facet tessellation: wanted triangle edge, in pixels
     showFacets: true,
     showEdges: true,
     cameraDistance: 6.5,
@@ -308,7 +296,6 @@ export const createRenderer = (canvas, options = {}) => {
 
     const facetProgram = link(gl, FACET_VS, FACET_FS);
     const edgeProgram = link(gl, EDGE_VS, EDGE_FS);
-    const torusProgram = link(gl, TORUS_VS, TORUS_FS);
     const compositeProgram = link(gl, COMPOSITE_VS, COMPOSITE_FS);
     const emptyVao = gl.createVertexArray();
 
@@ -336,11 +323,33 @@ export const createRenderer = (canvas, options = {}) => {
         return { vao, vbo, ibo, count: indices ? indices.length : data.length / stride };
     };
 
-    const setModel = (polytope, opts = {}) => {
-        if (model) for (const part of [model.facets, model.edges])
-            if (part) { gl.deleteVertexArray(part.vao); gl.deleteBuffer(part.vbo); if (part.ibo) gl.deleteBuffer(part.ibo); }
+    const FACET_ATTRIBUTES = () => [
+        { location: gl.getAttribLocation(facetProgram.program, 'aPosition'), size: 4, offset: 0 },
+        { location: gl.getAttribLocation(facetProgram.program, 'aFaceNormal'), size: 4, offset: 4 },
+    ];
+    const EDGE_ATTRIBUTES = () => [
+        { location: gl.getAttribLocation(edgeProgram.program, 'aStart'), size: 4, offset: 0 },
+        { location: gl.getAttribLocation(edgeProgram.program, 'aEnd'), size: 4, offset: 4 },
+        { location: gl.getAttribLocation(edgeProgram.program, 'aParams'), size: 4, offset: 8 },
+    ];
 
-        const facetData = buildFacets(polytope, { subdivision: opts.subdivision ?? 5 });
+    const release = (part) => {
+        if (!part) return;
+        gl.deleteVertexArray(part.vao); gl.deleteBuffer(part.vbo);
+        if (part.ibo) gl.deleteBuffer(part.ibo);
+    };
+
+    const rebuildFacets = (options) => {
+        const data = buildFacets(model.polytope, options);
+        release(model.facets);
+        model.facets = makeBuffers(data, FACET_ATTRIBUTES());
+        model.triangles = data.indices.length / 3;
+        return data;
+    };
+
+    const setModel = (polytope, opts = {}) => {
+        if (model) { release(model.facets); release(model.edges); }
+
         const edgeData = buildEdges(polytope, {
             vertices: polytope.vertices,
             samples: opts.samples ?? 24,
@@ -348,27 +357,20 @@ export const createRenderer = (canvas, options = {}) => {
         });
         model = {
             polytope,
-            facets: makeBuffers(facetData, [
-                { location: gl.getAttribLocation(facetProgram.program, 'aPosition'), size: 4, offset: 0 },
-                { location: gl.getAttribLocation(facetProgram.program, 'aFaceNormal'), size: 4, offset: 4 },
-            ]),
-            edges: makeBuffers(edgeData, [
-                { location: gl.getAttribLocation(edgeProgram.program, 'aStart'), size: 4, offset: 0 },
-                { location: gl.getAttribLocation(edgeProgram.program, 'aEnd'), size: 4, offset: 4 },
-                { location: gl.getAttribLocation(edgeProgram.program, 'aParams'), size: 4, offset: 8 },
-            ]),
+            baseSubdivision: opts.subdivision ?? 5,
+            facets: null,
+            edges: makeBuffers(edgeData, EDGE_ATTRIBUTES()),
         };
+        const facetData = rebuildFacets({ subdivision: model.baseSubdivision });
         return {
-            triangles: facetData.indices.length / 3,
+            triangles: model.triangles,
             strokeVertices: edgeData.vertexCount,
             fitDistance: fitCameraDistance(polytope, facetData, style.fieldOfView),
         };
     };
 
     const torusData = buildTorusWireframe();
-    const torus = makeBuffers(torusData, [
-        { location: gl.getAttribLocation(torusProgram.program, 'aPosition'), size: 4, offset: 0 },
-    ]);
+    const torus = makeBuffers(torusData, EDGE_ATTRIBUTES());
 
     // -- offscreen targets ---------------------------------------------------
     let targets = null;
@@ -462,28 +464,30 @@ export const createRenderer = (canvas, options = {}) => {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-        if (showTorus) {
-            gl.useProgram(torusProgram.program);
-            gl.uniformMatrix4fv(torusProgram.uniforms.uRotation4d, false, rotation4d);
-            gl.uniformMatrix4fv(torusProgram.uniforms.uViewProjection, false, vp);
-            gl.uniform3fv(torusProgram.uniforms.uInkColor, style.ink);
-            gl.uniform1f(torusProgram.uniforms.uAlpha, 0.10);
-            gl.depthMask(false);                    // the torus is a guide, not an occluder
-            gl.bindVertexArray(torus.vao);
-            gl.drawArrays(gl.LINES, 0, torus.count);
-            gl.depthMask(true);
-        }
-
-        if (style.showEdges) {
+        if (showTorus || style.showEdges) {
             gl.useProgram(edgeProgram.program);
-            gl.uniformMatrix4fv(edgeProgram.uniforms.uRotation4d, false, rotation4d);
-            gl.uniformMatrix4fv(edgeProgram.uniforms.uViewProjection, false, vp);
-            gl.uniform2fv(edgeProgram.uniforms.uViewport, size);
-            gl.uniform1f(edgeProgram.uniforms.uStrokeWidth, style.strokeWidth * supersample);
-            gl.uniform1f(edgeProgram.uniforms.uInkOpacity, style.inkOpacity);
-            gl.uniform3fv(edgeProgram.uniforms.uInkColor, style.ink);
-            gl.bindVertexArray(model.edges.vao);
-            gl.drawElements(gl.TRIANGLES, model.edges.count, gl.UNSIGNED_INT, 0);
+            const u = edgeProgram.uniforms;
+            gl.uniformMatrix4fv(u.uRotation4d, false, rotation4d);
+            gl.uniformMatrix4fv(u.uViewProjection, false, vp);
+            gl.uniform2fv(u.uViewport, size);
+            gl.uniform3fv(u.uInkColor, style.ink);
+
+            if (showTorus) {                        // a guide: even lines, and it occludes nothing
+                gl.uniform1f(u.uStrokeWidth, style.torusWidth * supersample);
+                gl.uniform1f(u.uInkOpacity, style.torusOpacity);
+                gl.uniform1f(u.uArtistic, 0);
+                gl.depthMask(false);
+                gl.bindVertexArray(torus.vao);
+                gl.drawElements(gl.TRIANGLES, torus.count, gl.UNSIGNED_INT, 0);
+                gl.depthMask(true);
+            }
+            if (style.showEdges) {
+                gl.uniform1f(u.uStrokeWidth, style.strokeWidth * supersample);
+                gl.uniform1f(u.uInkOpacity, style.inkOpacity);
+                gl.uniform1f(u.uArtistic, 1);
+                gl.bindVertexArray(model.edges.vao);
+                gl.drawElements(gl.TRIANGLES, model.edges.count, gl.UNSIGNED_INT, 0);
+            }
         }
 
         // Pass 2 — optical depth of the glass in front of whatever the ink left.
@@ -527,12 +531,37 @@ export const createRenderer = (canvas, options = {}) => {
         gl.bindVertexArray(null);
     };
 
+    // -- variable resolution -------------------------------------------------
+    // Retessellate for the pose the model is actually in.  This is not done per
+    // frame — it walks every face and rebuilds a large buffer — but on mouse-up,
+    // after a zoom, or on resize, which is when the answer has changed and the
+    // user is not mid-gesture.  Nothing is rebuilt if the levels come back the
+    // same, so repeated calls are cheap.
+    const applyRotation = (rotation, q) => [0, 1, 2, 3].map((i) =>
+        rotation[i] * q[0] + rotation[4 + i] * q[1] + rotation[8 + i] * q[2] + rotation[12 + i] * q[3]);
+
+    let builtLevels = null;
+
+    const refine = (rotation4d) => {
+        if (!model) return null;
+        resize();
+        const levels = facetLevels(model.polytope, (q) => project(applyRotation(rotation4d, q)),
+                                   { targetEdge: style.targetEdge });
+        const unchanged = builtLevels && levels.every((l, i) => l === builtLevels[i]);
+        if (unchanged) return { triangles: model.triangles, rebuilt: false };
+        rebuildFacets({ levels });
+        builtLevels = levels;
+        return { triangles: model.triangles, rebuilt: true };
+    };
+
     return {
         gl,
         setModel,
+        refine,
         setStyle: (patch) => { style = { ...style, ...patch }; },
         getStyle: () => ({ ...style }),
         setSupersample: (n) => { supersample = Math.max(1, Math.min(2, n | 0)); releaseTargets(); },
+        getTriangles: () => (model ? model.triangles : 0),
         draw,
         project,
         resize,
