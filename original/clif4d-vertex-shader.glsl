@@ -1,7 +1,7 @@
 
 uniform mat4 worldViewProjection;
-uniform mat4 planarRotation;
-uniform mat4 generalRotation;
+// Row-major array uploaded as-is, so it arrives transposed: use p * M.
+uniform mat4 rotation4d;
 uniform float cameraDist;
 
 attribute vec4 position;
@@ -12,7 +12,7 @@ varying vec4 v_color;
 void main()
 {
     v_color = color;
-    vec4 position3d = position * generalRotation * planarRotation;
+    vec4 position3d = position * rotation4d;
     float denom = cameraDist - position3d.w;
     denom = max( denom, 0.0001 );
     position3d.x = position3d.x / denom;

@@ -1,4 +1,4 @@
-import { createRotationHandler4D } from "../module/rotate4d.js";
+import { createRotationHandler4D, Plane } from "../module/rotate4d.js";
 import { cliffordTorus } from "./torus.js";
 
 // tdl scripts are loaded via script tags in index.html since
@@ -16,7 +16,9 @@ var g_eyeRadius = 15;
 function CreateApp()
 {
     var zoom4d = false;
-    var m_rotationHandler = createRotationHandler4D ();
+    // Standard frame already matches this renderer: x right, y up, z toward the
+    // viewer (eye sits on +z), w the fourth axis.
+    var m_rotationHandler = createRotationHandler4D();
     
     window .addEventListener( 'keydown', handleKeyDown, false );
     window .addEventListener( 'keyup', handleKeyUp, false );
@@ -87,8 +89,7 @@ function CreateApp()
     var projection = new Float32Array(16);
     var view = new Float32Array(16);
     var viewProjection = new Float32Array(16);
-    var planarRotation = new Float32Array(16);
-    var generalRotation = new Float32Array(16);
+    var rotation4d = new Float32Array(16);
     var worldViewProjection = new Float32Array(16);
     var eyePosition = new Float32Array(3);
     var target = new Float32Array(3);
@@ -124,14 +125,21 @@ function CreateApp()
         var deltaX = newX - lastMouseX;
         var deltaY = newY - lastMouseY;
 
+        var dx = deltaX;
+        var dy = -deltaY;   // screen up is positive
         var shiftDown = event.shiftKey;
         var altKey = event.altKey;
-        var normalDrag = !(shiftDown || altKey );
-        var generalDrag = (shiftDown && altKey );
-        if( generalDrag )
-            m_rotationHandler.mouseDraggedGeneral( deltaX, -deltaY );
+
+        // Plane.XZ carries x toward z; dragging right should carry the near
+        // side (+z) toward +x, hence the negations on the default drag.
+        if ( shiftDown && altKey )
+            m_rotationHandler.drag( -0.1 * dx, Plane.T1, -0.1 * dy, Plane.T2 );   // about the torus's core circles
+        else if ( shiftDown )
+            m_rotationHandler.drag( dx, Plane.XW, dy, Plane.YW );
+        else if ( altKey )
+            m_rotationHandler.drag( -dx, Plane.XY, -dy, Plane.ZW );
         else
-            m_rotationHandler.mouseDraggedPlanar( deltaX, -deltaY, normalDrag, shiftDown, altKey );
+            m_rotationHandler.drag( -dx, Plane.XZ, -dy, Plane.YZ );
 
         lastMouseX = newX
         lastMouseY = newY;
@@ -214,8 +222,7 @@ function CreateApp()
 		
         scene .uniforms = {
             worldViewProjection: worldViewProjection,
-            planarRotation: planarRotation,
-            generalRotation: generalRotation,
+            rotation4d: rotation4d,
             cameraDist: cameraDist
         };
 
@@ -310,8 +317,8 @@ function CreateApp()
         
         // Setup uniforms.
         scene.uniforms.worldViewProjection = viewProjection;
-        scene.uniforms.planarRotation =  m_rotationHandler.getPlanarMatrix();
-        scene.uniforms.generalRotation = m_rotationHandler.getGeneralMatrix();
+        // Torus and model share one shape here, so the model matrix drives both.
+        scene.uniforms.rotation4d = m_rotationHandler.getModelMatrix();
         scene.uniforms.cameraDist = cameraDist;
         for( var uniform in scene.uniforms ) 
             scene.program.setUniform( uniform, scene.uniforms[uniform] );

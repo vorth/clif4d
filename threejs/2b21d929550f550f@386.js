@@ -1,3 +1,6 @@
+
+import { createRotationHandler4D, Plane, transpose } from "../module/rotate4d.js";
+
 // https://observablehq.com/@vorth/clif4d-a-track-torus@386
 function _1(md){return(
 md`# Clif4d: A Track-Torus
@@ -74,6 +77,10 @@ reusable.
 function _s3Renderer(THREE,vertexShaderText,fragmentShaderText,width,addXyWzSpin,applySpin,addXwYwSpin,addXzYzSpin,invalidation){return(
 function( geometry, canvasWidth, aspect=8/5 ) {
   
+  // Standard frame already matches this renderer: x right, y up, z toward the
+  // viewer (camera on +z), w the fourth axis.
+  const m_rotationHandler = createRotationHandler4D({ sensitivity: 0.012 * 0.42 });
+  
   const scene = new THREE.Scene();
   scene.background = new THREE.Color( 0x888888 );
 
@@ -84,12 +91,8 @@ function( geometry, canvasWidth, aspect=8/5 ) {
   camera.position.z = 12;
   scene.add(camera);
 
-  var torusRotation = new THREE.Matrix4()
-  var generalRotation = new THREE.Matrix4()
-
   const uniforms = {
-    torusRotation: { value: torusRotation.elements },
-    generalRotation: { value: generalRotation.elements },
+    rotation4d: { value: new THREE.Matrix4().elements },
     cameraDist: { value: 1.0 }
   };
 
@@ -132,35 +135,25 @@ function( geometry, canvasWidth, aspect=8/5 ) {
     }
     const newX = event.clientX
     const newY = event.clientY
-    const sensitivity = 0.012
-    const spinMatrix = new THREE.Matrix4()
+    const dx = newX - lastMouseX
+    const dy = -( newY - lastMouseY )   // screen up is positive
+    const shiftDown = event.shiftKey;
+    const altKey = event.altKey;
 
-    var deltaX = -( newX - lastMouseX )
-    var deltaY = -( newY - lastMouseY )
+    // Same convention as the tdl and Wilson examples.  Plane.XZ carries x toward z;
+    // dragging right should carry the near side (+z) toward +x, hence the negations.
+    if( shiftDown && altKey ) {
+      m_rotationHandler.drag( -0.5 * dx, Plane.T1, -0.5 * dy, Plane.T2 );   // about the torus's core circles
 
-    deltaX *= sensitivity
-    deltaY *= sensitivity
-    if( event.shiftKey && event.altKey ) {
-      deltaX *= 0.1
-      deltaY *= 0.1
-      addXyWzSpin( deltaX, deltaY, spinMatrix )
-      generalRotation = applySpin( spinMatrix, generalRotation )
-      
-      element .value = generalRotation.clone()
+      element .value = m_rotationHandler.getCoreMatrix()
       element .dispatchEvent(new CustomEvent("input"));
     }
-    else if( event.shiftKey ) {
-      addXwYwSpin( deltaX, deltaY, spinMatrix )
-      torusRotation = applySpin( spinMatrix, torusRotation )
-    }
-    else if( event.altKey ) {
-      addXyWzSpin( deltaX, deltaY, spinMatrix )
-      torusRotation = applySpin( spinMatrix, torusRotation )
-    }
-    else {
-      addXzYzSpin( deltaX, deltaY, spinMatrix )
-      torusRotation = applySpin( spinMatrix, torusRotation )
-    }
+    else if( shiftDown )
+      m_rotationHandler.drag( dx, Plane.XW, dy, Plane.YW );
+    else if( altKey )
+      m_rotationHandler.drag( -dx, Plane.XY, -dy, Plane.ZW );
+    else
+      m_rotationHandler.drag( -dx, Plane.XZ, -dy, Plane.YZ );
 
     lastMouseX = newX
     lastMouseY = newY;
@@ -178,11 +171,8 @@ function( geometry, canvasWidth, aspect=8/5 ) {
     requestAnimationFrame( animate );
     // controls .update();
     
-    // Since all of our rotation code works in row-major order, but three.js Matrix4.elements
-    //   is in column-major order, we do a last-minute transpose here.  We also
-    //   do a clone first, so our rotation matrices remain untouched.
-    material.uniforms.torusRotation.value = torusRotation.clone().transpose().elements
-    material.uniforms.generalRotation.value = generalRotation.clone().transpose().elements
+    // rotate4d.js matrices are flat row-major; three.js uniforms want column-major.
+    material.uniforms.rotation4d.value = transpose( m_rotationHandler.getModelMatrix() );
     material.uniforms.cameraDist.value = 1.0
     renderer .render( scene, camera );
   }
@@ -191,7 +181,7 @@ function( geometry, canvasWidth, aspect=8/5 ) {
   renderer .render( scene, camera );
   
   // support viewof, to let this control another S3 rendering
-  renderer .domElement .value = generalRotation.clone()
+  renderer .domElement .value = m_rotationHandler.getCoreMatrix()
     
   return renderer.domElement;
 }
@@ -457,8 +447,7 @@ function _vertexShaderText(){return(
 `
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
-uniform mat4 torusRotation;
-uniform mat4 generalRotation;
+uniform mat4 rotation4d;   // column-major upload, so M * p
 uniform float cameraDist;
 
 attribute vec4 position4;
@@ -481,7 +470,7 @@ vec4 projectTo3d( vec4 arg )
 void main()
 {
     v_color = color;
-    vec4 position4dWorld = position4 * generalRotation * torusRotation;
+    vec4 position4dWorld = rotation4d * position4;
     vec4 position3d = projectTo3d( position4dWorld );
     gl_Position = projectionMatrix * modelViewMatrix * position3d;
 }
