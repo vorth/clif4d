@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clif4d: Regular Polychora</title>
+  <meta name="description" content="The six regular 4-polytopes on the 3-sphere, stereographically projected, turned with a Clifford torus trackball.">
+  <link rel="stylesheet" type="text/css" href="./style.css">
+</head>
+<body>
+
+  <div id="stage">
+    <canvas id="view"></canvas>
+  </div>
+
+  <aside id="panel">
+    <h1>Regular polychora</h1>
+
+    <label>Model
+      <select id="model"></select>
+    </label>
+
+    <label>Facet colour
+      <input type="color" id="colour">
+    </label>
+
+    <label>Transparency
+      <input type="range" id="opacity" min="0.02" max="0.6" step="0.01" value="0.15">
+    </label>
+
+    <label>Pen weight
+      <input type="range" id="pen" min="0" max="8" step="0.1" value="4.0">
+    </label>
+
+    <label>Clifford torus
+      <select id="torus">
+        <option value="drag">while dragging it</option>
+        <option value="always">always</option>
+        <option value="never">never</option>
+      </select>
+    </label>
+
+    <div class="row">
+      <label class="check"><input type="checkbox" id="facets" checked> facets</label>
+      <label class="check"><input type="checkbox" id="edges" checked> edges</label>
+    </div>
+
+    <button id="reset">Reset view</button>
+
+    <p id="status"></p>
+
+    <p class="help">
+      Drag to tumble · <kbd>shift</kbd> drag to rotate into the fourth axis ·
+      <kbd>alt</kbd> drag for the XY and ZW planes ·
+      <kbd>shift</kbd>+<kbd>alt</kbd> to drag the Clifford torus itself ·
+      scroll to zoom.
+    </p>
+  </aside>
+
+  <script type="module" src="./index.js"></script>
+</body>
+</html>
