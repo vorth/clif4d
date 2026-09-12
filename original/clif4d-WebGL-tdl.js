@@ -103,6 +103,31 @@ function CreateApp()
     var lastMouseX = null;
     var lastMouseY = null;
 
+    // Mouse position in canvas pixels (the canvas is CSS-scaled).
+    function canvasPixel( clientX, clientY )
+    {
+        var rect = canvas.getBoundingClientRect();
+        return [ ( clientX - rect.left ) * canvas.width / rect.width,
+                 ( clientY - rect.top ) * canvas.height / rect.height ];
+    }
+
+    // Screen position (canvas pixels, y down) and depth of a 4D world point,
+    // mirroring the vertex shader: 4D→3D perspective divide by (cameraDist - w),
+    // then the row-vector worldViewProjection.
+    function project( p4 )
+    {
+        var denom = Math.max( cameraDist - p4[3], 0.0001 );
+        var p = [ p4[0] / denom, p4[1] / denom, p4[2] / denom, 1 ];
+        var clip = [ 0, 0, 0, 0 ];
+        for ( var j = 0; j < 4; j++ )
+            for ( var i = 0; i < 4; i++ )
+                clip[j] += p[i] * viewProjection[ i * 4 + j ];
+        var w = clip[3] || 1e-6;
+        return [ ( clip[0] / w + 1 ) / 2 * canvas.width,
+                 ( 1 - clip[1] / w ) / 2 * canvas.height,
+                 w ];   // eye-space depth: smaller is nearer
+    }
+
     function handleMouseDown(event)
     {
         mouseDown = true;
@@ -113,6 +138,7 @@ function CreateApp()
     function handleMouseUp(event)
     {
         mouseDown = false;
+        m_rotationHandler.release();
     }
 
     function handleMouseMove(event)
@@ -133,7 +159,18 @@ function CreateApp()
         // Plane.XZ carries x toward z; dragging right should carry the near
         // side (+z) toward +x, hence the negations on the default drag.
         if ( shiftDown && altKey )
-            m_rotationHandler.drag( -0.1 * dx, Plane.T1, -0.1 * dy, Plane.T2 );   // about the torus's core circles
+        {
+            // Surface drag: grab the torus point under the cursor (on the first
+            // move of the drag) and make it follow the cursor along the surface.
+            var here = canvasPixel( newX, newY );
+            if ( ! m_rotationHandler.getGrab() )
+            {
+                var start = canvasPixel( lastMouseX, lastMouseY );
+                m_rotationHandler.grabNearest( start[0], start[1], project );
+            }
+            var last = canvasPixel( lastMouseX, lastMouseY );
+            m_rotationHandler.dragSurface( here[0] - last[0], here[1] - last[1], project );
+        }
         else if ( shiftDown )
             m_rotationHandler.drag( dx, Plane.XW, dy, Plane.YW );
         else if ( altKey )
@@ -200,9 +237,23 @@ function CreateApp()
         vsrequest.send();
     }
 
+    // Append the Clifford torus wireframe to a loaded model, so the trackball
+    // surface is visible alongside the thing it rotates.
+    function addTorus( loadedScene )
+    {
+        var torus = cliffordTorus().shape;
+        var shape = loadedScene.shape;
+        var offset = shape.points.length;
+        shape.points = shape.points.concat( torus.points );
+        shape.indices = shape.indices.concat( torus.indices.map( function ( e ) { return [ e[0] + offset, e[1] + offset ]; } ) );
+        if ( shape.colors && shape.colors.length > 0 )
+            shape.colors = shape.colors.concat( torus.colors );
+        return loadedScene;
+    }
+
     function handleLoadedScene( loadedScene )
     {
-        scene = loadedScene;
+        scene = canvas.dataset.showTorus !== undefined ? addTorus( loadedScene ) : loadedScene;
         finishLoading();
     }
 
@@ -331,6 +382,9 @@ function CreateApp()
         gl .clearColor( 0, 0, 0, 1 );
         gl .clear( gl.COLOR_BUFFER_BIT );
     }
+
+    // Debug handle: window.clif4d.handler / .project from the console.
+    window.clif4d = { handler: m_rotationHandler, project: project };
 
     return {
         modelReady   : modelIsReady,

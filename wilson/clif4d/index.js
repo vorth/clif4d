@@ -21,12 +21,11 @@ const CORE_PLANES = ['xz', 'yw'];
 //   drag             tumble in 3-space         (XZ, YZ)
 //   shift + drag     rotate into the 4th axis  (XW, YW)
 //   alt + drag       rotate XY and ZW
-//   shift+alt + drag rotate about the torus's core circles (T1, T2), slowed 10x
+//   shift+alt + drag surface drag: the torus point under the cursor follows it
 // dy is positive upward.  Plane.XZ carries x toward z; dragging right should
 // carry the near side (+z) toward +x, hence the negations on the default drag.
 function dragRotate(handler, dx, dy, shift, alt) {
-    if (shift && alt)  handler.drag(-0.1 * dx, Plane.T1, -0.1 * dy, Plane.T2);
-    else if (shift)    handler.drag(-dx, Plane.XW, -dy, Plane.YW);
+    if (shift)         handler.drag(-dx, Plane.XW, -dy, Plane.YW);
     else if (alt)      handler.drag(-dx, Plane.XY, -dy, Plane.ZW);
     else               handler.drag(-dx, Plane.XZ, -dy, Plane.YZ);
 }
@@ -64,6 +63,29 @@ function initWilson2() {
     let lastClientX = null;
     let lastClientY = null;
 
+    // Mouse position in canvas pixels (y down).
+    const canvasPixel = (clientX, clientY) => {
+        const rect = canvas.getBoundingClientRect();
+        return [(clientX - rect.left) * wilson.canvasWidth / rect.width,
+                (clientY - rect.top) * wilson.canvasHeight / rect.height];
+    };
+
+    // Screen position (canvas pixels, y down) and depth of a 4D world point,
+    // mirroring the shader: the object at 4D point q is seen where the sample
+    // point p = S3toR3(q) lies, viewed by the pinhole camera in image().
+    const project = (q) => {
+        const p = [q[0] / (1 - q[3]), q[1] / (1 - q[3]), q[2] / (1 - q[3])];   // S3toR3
+        const eye = [0, 0, 12];
+        // viewMatrix(eye, origin, up=(0,-1,0)) gives s = (-1,0,0), u = (0,-1,0), -f = (0,0,1).
+        const vx = -(p[0] - eye[0]), vy = -(p[1] - eye[1]), vz = (p[2] - eye[2]);
+        const depth = Math.max(-vz, 1e-6);                       // distance in front of the eye
+        const W = wilson.canvasWidth, H = wilson.canvasHeight;
+        const focal = H / Math.tan((45 * Math.PI / 180) / 2);     // rayDirection(45, ...)
+        const fx = W / 2 + vx * focal / depth;                    // fragCoord, y up
+        const fy = H / 2 + vy * focal / depth;
+        return [fx, H - fy, depth];
+    };
+
     const options = {
         shader,
         uniforms: {
@@ -94,13 +116,21 @@ function initWilson2() {
                 mouseup: () => {
                     lastClientX = null;
                     lastClientY = null;
+                    rotHandler.release();
                 },
                 mousedrag: ({ event }) => {
                     if (lastClientX === null) return;
                     const dx = event.clientX - lastClientX;
                     const dy = event.clientY - lastClientY;
 
-                    dragRotate(rotHandler, dx, -dy, event.shiftKey, event.altKey);
+                    if (event.shiftKey && event.altKey) {
+                        const last = canvasPixel(lastClientX, lastClientY);
+                        const here = canvasPixel(event.clientX, event.clientY);
+                        if (!rotHandler.getGrab()) rotHandler.grabNearest(last[0], last[1], project);
+                        rotHandler.dragSurface(here[0] - last[0], here[1] - last[1], project);
+                    }
+                    else
+                        dragRotate(rotHandler, dx, -dy, event.shiftKey, event.altKey);
 
                     lastClientX = event.clientX;
                     lastClientY = event.clientY;
@@ -115,6 +145,7 @@ function initWilson2() {
         },
     };
     const wilson = new WilsonGPU(canvas, options);
+    window.clif4d = { handler: rotHandler, project };   // debug handle
 
     const startTime = performance.now();
     function drawFrame() {

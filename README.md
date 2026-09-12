@@ -41,6 +41,28 @@ corePlanes: ['xz','yw']`.  T1 rotates in the first core plane, T2 in the second.
 Order matters in `drag()` only when the two planes share an axis (e.g. XZ then
 YZ); T1/T2 commute with everything.
 
+### Dragging the surface (prototype)
+
+`drag(…, T1, …, T2)` maps screen axes to fixed angle increments, so its feel
+depends on where the core circles happen to be.  The surface-drag API instead
+behaves like a trackball: it holds a material point of the torus and makes it
+follow the cursor along the surface, whatever the pose.
+
+```js
+// project: 4D world point (your coordinates) → [sx, sy, depth?] in the same
+// units as your mouse deltas (canvas pixels, say).  depth: smaller is nearer.
+rot.grabNearest(sx, sy, project);      // on the first move of a drag: hold the torus point under the cursor
+rot.dragSurface(dx, dy, project);      // each move: the held point follows the cursor; returns [dθ1, dθ2]
+rot.release();                         // on mouse up
+rot.torusPoint(phi1, phi2);            // world point of the torus at those core angles
+```
+
+Pixels become radians through the projection's Jacobian, so there is no
+sensitivity to tune; where the surface is edge-on the drag is absorbed rather
+than amplified.  A cursor off the torus grabs the nearest surface point.
+All three examples use this for Shift+Alt drags (`data-show-torus` on the tdl canvas
+overlays the torus on the model so the surface is visible).
+
 Uploading to WebGL: `gl.uniformMatrix4fv(loc, false, transpose(m))` with
 `M * p` in GLSL, or upload `m` as-is and write `p * M`.  `toRows(m)` gives the
 nested `value[row][col]` form Wilson wants.  Tests: `node --test module/rotate4d.test.js`.
