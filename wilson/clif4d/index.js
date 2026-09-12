@@ -1,7 +1,7 @@
 import { WilsonGPU } from "../wilson.js";
 import { commonGlsl } from "./shaders/common.js";
 import { torusGlsl } from "./shaders/torus.js";
-import { createSingleRotationHandler4D, toRows } from "../../module/rotate4d.js";
+import { createRotationHandler4D, Plane, toRows } from "../../module/rotate4d.js";
 
 const identityWilson = [
     [1, 0, 0, 0],
@@ -9,6 +9,27 @@ const identityWilson = [
     [0, 0, 1, 0],
     [0, 0, 0, 1],
 ];
+
+// Screen frame: this scene's camera sits on +z looking at the origin, but
+// dragging feels right with standard z (toward the viewer) = this scene's -z.
+const AXES = ['x', 'y', '-z', 'w'];
+// Torus frame: the SDF builds the Clifford torus with its core circles in this
+// scene's (x,z) and (y,w) planes (see the torusSdf / core() swizzles).
+const CORE_PLANES = ['xz', 'yw'];
+
+// Shared mouse convention (same as the tdl example):
+//   drag             tumble in 3-space         (XZ, YZ)
+//   shift + drag     rotate into the 4th axis  (XW, YW)
+//   alt + drag       rotate XY and ZW
+//   shift+alt + drag rotate about the torus's core circles (T1, T2), slowed 10x
+// dy is positive upward.  Plane.XZ carries x toward z; dragging right should
+// carry the near side (+z) toward +x, hence the negations on the default drag.
+function dragRotate(handler, dx, dy, shift, alt) {
+    if (shift && alt)  handler.drag(-0.1 * dx, Plane.T1, -0.1 * dy, Plane.T2);
+    else if (shift)    handler.drag(-dx, Plane.XW, -dy, Plane.YW);
+    else if (alt)      handler.drag(-dx, Plane.XY, -dy, Plane.ZW);
+    else               handler.drag(-dx, Plane.XZ, -dy, Plane.YZ);
+}
 
 function initWilson2() {
     const canvas = document.querySelector("#demo-canvas-2");
@@ -38,7 +59,8 @@ function initWilson2() {
 		}
 	`;
 
-    const rotHandler = createSingleRotationHandler4D();
+    // The raymarcher transforms sample points, so it needs inverse matrices.
+    const rotHandler = createRotationHandler4D({ inverse: true, axes: AXES, corePlanes: CORE_PLANES });
     let lastClientX = null;
     let lastClientY = null;
 
@@ -50,8 +72,7 @@ function initWilson2() {
             c: [0, 1],
             iTime: 0,
             iResolution: [resolution, resolution],
-            generalRotation: identityWilson,
-            planarRotation: identityWilson,
+            rotation4d: identityWilson,
         },
         canvasWidth: resolution,
         onResizeCanvas: drawFrame,
@@ -79,13 +100,7 @@ function initWilson2() {
                     const dx = event.clientX - lastClientX;
                     const dy = event.clientY - lastClientY;
 
-                    const shift = event.shiftKey;
-                    const alt = event.altKey;
-
-                    const normalDrag = !(shift || alt);
-                    const generalDrag = shift && alt;
-
-                    rotHandler.mouseDragged(dx, -dy, normalDrag, shift && !alt, !shift && alt, generalDrag);
+                    dragRotate(rotHandler, dx, -dy, event.shiftKey, event.altKey);
 
                     lastClientX = event.clientX;
                     lastClientY = event.clientY;
@@ -108,8 +123,7 @@ function initWilson2() {
             worldSize: [wilson.worldWidth, wilson.worldHeight],
             iTime: (performance.now() - startTime) / 1000,
             iResolution: [wilson.canvasWidth, wilson.canvasHeight],
-            generalRotation: toRows(rotHandler.getGeneralMatrix()),
-            planarRotation: toRows(rotHandler.getPlanarMatrix()),
+            rotation4d: toRows(rotHandler.getModelMatrix()),
         });
         wilson.drawFrame();
         requestAnimationFrame(drawFrame);

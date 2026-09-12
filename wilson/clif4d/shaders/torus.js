@@ -26,12 +26,11 @@ float planeSdf( vec3 p, vec4 n )
   return dot(p,n.xyz) + n.w;
 }
 
-uniform mat4 generalRotation;
-uniform mat4 planarRotation;
+uniform mat4 rotation4d;   // inverse of the model rotation: we transform sample points
 
 vec4 transform( vec3 p )
 {
-    vec4 p4 = generalRotation * planarRotation * R3toS3( p );
+    vec4 p4 = rotation4d * R3toS3( p );
     return p4;
 }
 
