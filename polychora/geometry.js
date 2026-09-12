@@ -47,18 +47,21 @@ const centroid = (vertices, face) => normalize4(face.reduce(
     [0, 0, 0, 0]));
 
 /**
- * buildFacets(polytope, { subdivision })
+ * buildFacets(polytope, { subdivision, levels })
  *
  * Interleaved vertex buffer of position (vec4, on S^3) and the face's 4D
  * normal (vec4), plus a 32-bit index buffer of triangles.
+ *
+ * `levels`, if given, is a subdivision level per face — see facetLevels below.
+ * Otherwise every face gets `subdivision`.
  */
-export const buildFacets = ({ vertices, faces }, { subdivision = 5 } = {}) => {
-    const L = Math.max(1, subdivision | 0);
+export const buildFacets = ({ vertices, faces }, { subdivision = 5, levels = null } = {}) => {
     const positions = [];
     const normals = [];
     const indices = [];
 
-    for (const face of faces) {
+    faces.forEach((face, faceIndex) => {
+        const L = Math.max(1, (levels ? levels[faceIndex] : subdivision) | 0);
         const n = faceNormal(vertices, face);
         const c = centroid(vertices, face);
         for (let e = 0; e < face.length; e++) {
@@ -85,7 +88,7 @@ export const buildFacets = ({ vertices, faces }, { subdivision = 5 } = {}) => {
                     if (j < i) indices.push(at(i, j), at(i + 1, j + 1), at(i, j + 1));
                 }
         }
-    }
+    });
 
     const count = positions.length / 4;
     const data = new Float32Array(count * 8);
@@ -141,6 +144,67 @@ export const buildEdges = ({ edges }, { vertices: verts4, samples = 24, strokes 
 };
 
 /**
+ * facetLevels(polytope, project, { targetEdge, maxLevel, budget })
+ *
+ * A subdivision level per face, from how big that face currently looks.
+ *
+ * Uniform subdivision is the wrong measure here.  Stereographic projection
+ * stretches a patch by 1/(1-w)², so in any given pose a handful of facets —
+ * the ones wrapped around the outside — are enormous on screen while most are
+ * a few pixels across.  Subdividing everything enough for the big ones wastes
+ * almost all of it; subdividing for the average leaves the outer silhouettes
+ * visibly polygonal.
+ *
+ * So each face is measured: its boundary arcs are projected and their screen
+ * length divided by `targetEdge` pixels.  Tiny facets fall to a single fan,
+ * big ones climb to `maxLevel`, and if the total blows past `budget`
+ * triangles every level is scaled back together.
+ *
+ * `project(p4)` is the client's projection — the same one the surface drag
+ * uses — returning screen pixels.
+ */
+export const facetLevels = ({ vertices, faces }, project, {
+    targetEdge = 9, maxLevel = 48, budget = 900000,
+} = {}) => {
+    const ARC_SAMPLES = 4;
+    const screen = (a, b, t) => {                       // slerp on S^3, then project
+        const d = Math.max(-1, Math.min(1, a.reduce((s, c, k) => s + c * b[k], 0)));
+        const omega = Math.acos(d);
+        const q = omega < 1e-6 ? a : a.map((c, k) =>
+            (Math.sin((1 - t) * omega) * c + Math.sin(t * omega) * b[k]) / Math.sin(omega));
+        return project(q);
+    };
+
+    const levels = faces.map((face) => {
+        let perimeter = 0;
+        for (let e = 0; e < face.length; e++) {
+            const a = vertices[face[e]], b = vertices[face[(e + 1) % face.length]];
+            let previous = screen(a, b, 0);
+            for (let s = 1; s <= ARC_SAMPLES; s++) {
+                const here = screen(a, b, s / ARC_SAMPLES);
+                const step = Math.hypot(here[0] - previous[0], here[1] - previous[1]);
+                perimeter += Number.isFinite(step) ? Math.min(step, 1e5) : 0;
+                previous = here;
+            }
+        }
+        const level = Math.ceil(perimeter / (face.length * targetEdge));
+        return Math.max(1, Math.min(maxLevel, level));
+    });
+
+    // Triangles are level² per fan triangle, so scaling levels by k scales the
+    // count by k²; that is what keeps the pull-back cheap to compute.
+    const triangles = () => faces.reduce(
+        (sum, face, i) => sum + face.length * levels[i] * levels[i], 0);
+    const total = triangles();
+    if (total > budget) {
+        const k = Math.sqrt(budget / total);
+        for (let i = 0; i < levels.length; i++)
+            levels[i] = Math.max(1, Math.floor(levels[i] * k));
+    }
+    return levels;
+};
+
+/**
  * fitCameraDistance(polytope, facets, fieldOfViewDegrees)
  *
  * A camera distance that frames the model in its rest pose.  Two things are
@@ -183,20 +247,26 @@ export const fitCameraDistance = ({ vertices, edges }, facets, fieldOfViewDegree
 // The Clifford torus, drawn as a wireframe when the user grabs it.  Its core
 // circles lie in the (x,y) and (z,w) planes — the handler's default corePlanes,
 // which is what makes a shift+alt drag turn the model around the torus.
-export const buildTorusWireframe = ({ lines = 32, samples = 96 } = {}) => {
+//
+// It comes back as edge-ribbon geometry rather than GL lines: a hardware line
+// is one pixel wide, which all but disappears once the supersampled buffer is
+// resolved, and the torus is meant to be seen.  Each short segment becomes its
+// own two-sample ribbon; the edge shader's taper and grain are switched off
+// for it, so the result is an even line of the width asked for.
+export const buildTorusWireframe = ({ lines = 20, samples = 72 } = {}) => {
     const r = Math.SQRT1_2;
-    const data = [];
-    const push = (p1, p2) => {
-        const c1 = Math.cos(p1), s1 = Math.sin(p1), c2 = Math.cos(p2), s2 = Math.sin(p2);
-        data.push(r*c1, r*s1, r*c2, r*s2);
+    const point = (p1, p2) => [r*Math.cos(p1), r*Math.sin(p1), r*Math.cos(p2), r*Math.sin(p2)];
+    const vertices = [];
+    const edges = [];
+    const strand = (at) => {
+        const first = vertices.length;
+        for (let s = 0; s < samples; s++) vertices.push(at((s / samples) * 2 * Math.PI));
+        for (let s = 0; s < samples; s++) edges.push([first + s, first + (s + 1) % samples]);
     };
     for (let i = 0; i < lines; i++) {
         const fixed = (i / lines) * 2 * Math.PI;
-        for (let s = 0; s < samples; s++) {
-            const t0 = (s / samples) * 2 * Math.PI, t1 = ((s + 1) / samples) * 2 * Math.PI;
-            push(fixed, t0); push(fixed, t1);          // first family
-            push(t0, fixed); push(t1, fixed);          // second family
-        }
+        strand((t) => point(fixed, t));
+        strand((t) => point(t, fixed));
     }
-    return { data: new Float32Array(data), vertexCount: data.length / 4, stride: 4 };
+    return buildEdges({ edges }, { vertices, samples: 2, strokes: 1 });
 };
