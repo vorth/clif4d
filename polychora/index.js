@@ -66,6 +66,14 @@ const refineSoon = (delay = 120) => {
 
 let dragging = false, lastX = 0, lastY = 0, grabbing = false;
 
+// The torus shows as soon as shift+alt is held, not only once a drag is under
+// way — otherwise the first drag is made blind.
+let torusKeys = false;
+const readKeys = (event) => { torusKeys = event.shiftKey && event.altKey; };
+window.addEventListener('keydown', readKeys);
+window.addEventListener('keyup', readKeys);
+window.addEventListener('blur', () => { torusKeys = false; });
+
 const canvasPixel = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
     return [(clientX - rect.left) * canvas.width / rect.width,
@@ -140,6 +148,10 @@ control('#opacity', (e) => renderer.setStyle({ opacity: sliderToOpacity(e.target
 
 document.querySelector('#torus-opacity').value = DEFAULT_STYLE.torusOpacity;
 control('#torus-opacity', (e) => renderer.setStyle({ torusOpacity: Number(e.target.value) }));
+
+document.querySelector('#torus-colour').value = rgbToHex(DEFAULT_STYLE.torusColor);
+control('#torus-colour', (e) => renderer.setStyle({ torusColor: hexToRgb(e.target.value) }));
+control('#torus-surface', (e) => renderer.setStyle({ torusSurface: e.target.checked }), 'change');
 control('#detail', (e) => {
     renderer.setStyle({ targetEdge: Number(e.target.value) });
     refineSoon(0);
@@ -171,7 +183,8 @@ applyRestPose();
 refineSoon(0);
 
 const frame = () => {
-    const showTorus = torusMode.value === 'always' || (torusMode.value === 'drag' && grabbing);
+    const showTorus = torusMode.value === 'always'
+        || (torusMode.value === 'drag' && (torusKeys || grabbing));
     renderer.draw(new Float32Array(transpose(handler.getModelMatrix())), { showTorus });
     requestAnimationFrame(frame);
 };

@@ -33,7 +33,8 @@
 // width and a little grain along its length, so an edge reads as a drawn mark
 // rather than a tube.
 
-import { buildFacets, buildEdges, buildTorusWireframe, facetLevels, fitCameraDistance } from './geometry.js';
+import { buildFacets, buildEdges, buildTorusWireframe, buildTorusSurface,
+         facetLevels, fitCameraDistance } from './geometry.js';
 
 // The stereographic projection R^3 ← S^3 divides by (1 - w), matching the
 // other clif4d examples.  The clamp keeps geometry at the pole finite.
@@ -64,44 +65,91 @@ const FACET_VS = /* glsl */ `#version 300 es
 // the great sphere passes through the pole).  Taking the normal from that
 // sphere rather than from the tessellation makes the shading exact, however
 // coarse the triangles are.
-const FACET_FS = /* glsl */ `#version 300 es
-    precision highp float;
-    in vec3 vWorld;
-    in vec4 vNormal4;
+// Matte glass: wrapped diffuse so it never goes fully dark, a fresnel term
+// that both brightens and closes up the surface at grazing angles, and a broad
+// low-exponent highlight.  Written as optical depth for the accumulation pass.
+const GLASS_GLSL = /* glsl */ `
     uniform vec3 uEye, uBaseColor, uRimColor, uLight;
     uniform float uOpacity, uRimOpacity, uTauScale;
-    out vec4 fragColor;
-    void main() {
-        vec3 N = abs(vNormal4.w) > 1e-4
-            ? normalize(vWorld + vNormal4.xyz / vNormal4.w)
-            : normalize(vNormal4.xyz);
-        vec3 V = normalize(uEye - vWorld);
-        if (dot(N, V) < 0.0) N = -N;                       // facets are two-sided
+
+    vec4 glass(vec3 world, vec3 N) {
+        vec3 V = normalize(uEye - world);
+        if (dot(N, V) < 0.0) N = -N;                       // two-sided
 
         float ndv = clamp(dot(N, V), 0.0, 1.0);
         float fresnel = pow(1.0 - ndv, 3.0);
-        float diffuse = clamp(0.5 + 0.5 * dot(N, uLight), 0.0, 1.0);   // wrapped: matte
+        float diffuse = clamp(0.5 + 0.5 * dot(N, uLight), 0.0, 1.0);
         vec3 H = normalize(uLight + V);
-        float spec = pow(max(dot(N, H), 0.0), 6.0) * 0.12;             // broad, low sheen
+        float spec = pow(max(dot(N, H), 0.0), 6.0) * 0.12;
 
         vec3 rim = mix(uRimColor, uBaseColor, 0.35);
         vec3 colour = uBaseColor * (0.42 + 0.58 * diffuse) + fresnel * 0.5 * rim + spec;
         float alpha = clamp(uOpacity + (0.9 - uOpacity) * fresnel * uRimOpacity, 0.0, 0.9);
 
         float tau = -log(1.0 - alpha) * uTauScale;
-        fragColor = vec4(colour * tau, tau);
+        return vec4(colour * tau, tau);
     }
 `;
 
-const EDGE_VS = /* glsl */ `#version 300 es
+const FACET_FS = /* glsl */ `#version 300 es
+    precision highp float;
+    in vec3 vWorld;
+    in vec4 vNormal4;
+    out vec4 fragColor;
+    ${GLASS_GLSL}
+    void main() {
+        vec3 N = abs(vNormal4.w) > 1e-4
+            ? normalize(vWorld + vNormal4.xyz / vNormal4.w)
+            : normalize(vNormal4.xyz);
+        fragColor = glass(vWorld, N);
+    }
+`;
+
+// The Clifford torus as a surface.  Its normal is not a sphere's, so it comes
+// from the S^3 normal pushed through the derivative of the projection
+//     p = q.xyz / (1 - q.w),   Dp[v] = v.xyz / (1 - q.w) + q.xyz v.w / (1 - q.w)^2
+// which is exact because stereographic projection is conformal, and so carries
+// normals to normals.
+const TORUS_SURFACE_VS = /* glsl */ `#version 300 es
+    precision highp float;
+    in vec4 aPosition;
+    in vec4 aNormal;
+    uniform mat4 uRotation4d;
+    uniform mat4 uViewProjection;
+    out vec3 vWorld;
+    out vec3 vNormal;
+    ${PROJECT_GLSL}
+    void main() {
+        vec4 q = uRotation4d * aPosition;
+        vec4 n = uRotation4d * aNormal;
+        float d = max(1.0 - q.w, POLE_EPS);
+        vWorld = q.xyz / d;
+        vNormal = normalize(n.xyz / d + q.xyz * n.w / (d * d));
+        gl_Position = uViewProjection * vec4(vWorld, 1.0);
+    }
+`;
+
+const TORUS_SURFACE_FS = /* glsl */ `#version 300 es
+    precision highp float;
+    in vec3 vWorld;
+    in vec3 vNormal;
+    out vec4 fragColor;
+    ${GLASS_GLSL}
+    void main() { fragColor = glass(vWorld, normalize(vNormal)); }
+`;
+
+// Shared by the polytope's edges and the torus guide lines: slerp along the
+// arc, project, and expand it into a ribbon measured in screen pixels, so the
+// line has no thickness in 3-space.
+const RIBBON_VS = /* glsl */ `#version 300 es
     precision highp float;
     in vec4 aStart, aEnd;       // the arc's endpoints on S^3
     in vec4 aParams;            // t along the arc, side (±1), stroke index, seed
     uniform mat4 uRotation4d;
     uniform mat4 uViewProjection;
     uniform vec2 uViewport;
-    uniform float uStrokeWidth, uInkOpacity, uArtistic;
-    out float vSide, vHalfWidth, vAlpha;
+    uniform float uStrokeWidth, uInkOpacity, uArtistic, uCameraDistance;
+    out float vSide, vHalfWidth, vAlpha, vHaze;
     ${PROJECT_GLSL}
 
     vec4 arc(float t) {
@@ -144,12 +192,14 @@ const EDGE_VS = /* glsl */ `#version 300 es
         vSide = side;
         vHalfWidth = halfWidth;
         vAlpha = uInkOpacity * (stroke < 0.5 ? 1.0 : 0.45) * grain;
+        // Distance haze: the far side of the figure sits back a little.
+        vHaze = mix(1.15, 0.45, clamp((here.w - uCameraDistance + 2.4) / 4.8, 0.0, 1.0));
     }
 `;
 
 const EDGE_FS = /* glsl */ `#version 300 es
     precision highp float;
-    in float vSide, vHalfWidth, vAlpha;
+    in float vSide, vHalfWidth, vAlpha, vHaze;
     uniform vec3 uInkColor;
     out vec4 fragColor;
     void main() {
@@ -157,6 +207,27 @@ const EDGE_FS = /* glsl */ `#version 300 es
         float a = vAlpha * feather;
         if (a < 0.12) discard;              // keep faint fringes out of the depth buffer
         fragColor = vec4(uInkColor, a);
+    }
+`;
+
+// The torus drawn as a lit tube: a blown-out core inside a soft coloured
+// bloom, dimming with distance.  It goes to its own buffer and is added after
+// the glass is composited, so it reads through a crowded polytope instead of
+// being veiled by it — which a guide line should be.
+const NEON_FS = /* glsl */ `#version 300 es
+    precision highp float;
+    in float vSide, vHalfWidth, vAlpha, vHaze;
+    uniform vec3 uTorusColor;
+    out vec4 fragColor;
+    void main() {
+        float r = abs(vSide);
+        float core = exp(-(r / 0.26) * (r / 0.26));
+        float bloom = exp(-(r / 0.62) * (r / 0.62));
+        float edge = clamp((1.0 - r) * vHalfWidth, 0.0, 1.0);          // ~1px cutoff
+        vec3 colour = mix(uTorusColor, vec3(1.0), core * 0.9);
+        float alpha = clamp(vAlpha * vHaze * (0.85 * core + 0.35 * bloom), 0.0, 1.0) * edge;
+        if (alpha < 0.004) discard;
+        fragColor = vec4(colour, alpha);
     }
 `;
 
@@ -173,7 +244,7 @@ const COMPOSITE_VS = /* glsl */ `#version 300 es
 const COMPOSITE_FS = /* glsl */ `#version 300 es
     precision highp float;
     in vec2 vUv;
-    uniform sampler2D uInk, uAccum;
+    uniform sampler2D uInk, uAccum, uGlow;
     uniform float uTauScale;
     uniform int uSamples;                           // supersampling factor (1 or 2)
     out vec4 fragColor;
@@ -184,7 +255,8 @@ const COMPOSITE_FS = /* glsl */ `#version 300 es
         float tau = acc.a / uTauScale;
         float T = exp(-tau);
         vec3 glass = acc.a > 1e-6 ? acc.rgb / acc.a : vec3(0.0);
-        return ink * T + (1.0 - T) * glass;
+        vec4 glow = texelFetch(uGlow, texel, 0);                // premultiplied
+        return (ink * T + (1.0 - T) * glass) * (1.0 - glow.a) + glow.rgb;
     }
     void main() {
         ivec2 base = ivec2(gl_FragCoord.xy) * uSamples;
@@ -197,7 +269,8 @@ const COMPOSITE_FS = /* glsl */ `#version 300 es
 `;
 
 // Exported so the offscreen test harness can compile and run the real shaders.
-export const SHADER_SOURCE = { FACET_VS, FACET_FS, EDGE_VS, EDGE_FS, COMPOSITE_VS, COMPOSITE_FS };
+export const SHADER_SOURCE = { FACET_VS, FACET_FS, RIBBON_VS, EDGE_FS, NEON_FS,
+                               TORUS_SURFACE_VS, TORUS_SURFACE_FS, COMPOSITE_VS, COMPOSITE_FS };
 
 // ---------------------------------------------------------------------------
 // Small matrix helpers (column-major, the order WebGL wants)
@@ -260,8 +333,11 @@ export const DEFAULT_STYLE = {
     rimOpacity: 0.60,         // how much grazing angles close the glass up
     strokeWidth: 4.0,         // pixels, before the taper
     inkOpacity: 1.0,
-    torusWidth: 1.6,          // pixels; the Clifford torus guide lines
-    torusOpacity: 0.45,
+    torusWidth: 5.0,          // pixels; the Clifford torus guide lines, as lit tubes
+    torusOpacity: 0.85,
+    torusColor: [0.10, 0.72, 0.85],
+    torusSurface: false,      // the torus as glass as well as wire
+    torusSurfaceOpacity: 0.05,
     targetEdge: 9,            // facet tessellation: wanted triangle edge, in pixels
     showFacets: true,
     showEdges: true,
@@ -295,7 +371,9 @@ export const createRenderer = (canvas, options = {}) => {
     let supersample = options.supersample ?? 2;
 
     const facetProgram = link(gl, FACET_VS, FACET_FS);
-    const edgeProgram = link(gl, EDGE_VS, EDGE_FS);
+    const edgeProgram = link(gl, RIBBON_VS, EDGE_FS);
+    const neonProgram = link(gl, RIBBON_VS, NEON_FS);
+    const torusSurfaceProgram = link(gl, TORUS_SURFACE_VS, TORUS_SURFACE_FS);
     const compositeProgram = link(gl, COMPOSITE_VS, COMPOSITE_FS);
     const emptyVao = gl.createVertexArray();
 
@@ -369,8 +447,11 @@ export const createRenderer = (canvas, options = {}) => {
         };
     };
 
-    const torusData = buildTorusWireframe();
-    const torus = makeBuffers(torusData, EDGE_ATTRIBUTES());
+    const torus = makeBuffers(buildTorusWireframe(), EDGE_ATTRIBUTES());
+    const torusSurface = makeBuffers(buildTorusSurface(), [
+        { location: gl.getAttribLocation(torusSurfaceProgram.program, 'aPosition'), size: 4, offset: 0 },
+        { location: gl.getAttribLocation(torusSurfaceProgram.program, 'aNormal'), size: 4, offset: 4 },
+    ]);
 
     // -- offscreen targets ---------------------------------------------------
     let targets = null;
@@ -388,9 +469,10 @@ export const createRenderer = (canvas, options = {}) => {
 
     const releaseTargets = () => {
         if (!targets) return;
-        gl.deleteTexture(targets.ink); gl.deleteTexture(targets.accum);
+        gl.deleteTexture(targets.ink); gl.deleteTexture(targets.accum); gl.deleteTexture(targets.glow);
         gl.deleteRenderbuffer(targets.depth);
         gl.deleteFramebuffer(targets.inkFbo); gl.deleteFramebuffer(targets.accumFbo);
+        gl.deleteFramebuffer(targets.glowFbo);
         targets = null;
     };
 
@@ -420,7 +502,11 @@ export const createRenderer = (canvas, options = {}) => {
             if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error(`framebuffer incomplete: ${status}`);
             return fbo;
         };
-        targets = { width: w, height: h, ink, accum, depth, inkFbo: attach(ink), accumFbo: attach(accum) };
+        const glow = makeTexture(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+        targets = {
+            width: w, height: h, ink, accum, glow, depth,
+            inkFbo: attach(ink), accumFbo: attach(accum), glowFbo: attach(glow),
+        };
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     };
 
@@ -464,30 +550,19 @@ export const createRenderer = (canvas, options = {}) => {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-        if (showTorus || style.showEdges) {
+        if (style.showEdges) {
             gl.useProgram(edgeProgram.program);
             const u = edgeProgram.uniforms;
             gl.uniformMatrix4fv(u.uRotation4d, false, rotation4d);
             gl.uniformMatrix4fv(u.uViewProjection, false, vp);
             gl.uniform2fv(u.uViewport, size);
             gl.uniform3fv(u.uInkColor, style.ink);
-
-            if (showTorus) {                        // a guide: even lines, and it occludes nothing
-                gl.uniform1f(u.uStrokeWidth, style.torusWidth * supersample);
-                gl.uniform1f(u.uInkOpacity, style.torusOpacity);
-                gl.uniform1f(u.uArtistic, 0);
-                gl.depthMask(false);
-                gl.bindVertexArray(torus.vao);
-                gl.drawElements(gl.TRIANGLES, torus.count, gl.UNSIGNED_INT, 0);
-                gl.depthMask(true);
-            }
-            if (style.showEdges) {
-                gl.uniform1f(u.uStrokeWidth, style.strokeWidth * supersample);
-                gl.uniform1f(u.uInkOpacity, style.inkOpacity);
-                gl.uniform1f(u.uArtistic, 1);
-                gl.bindVertexArray(model.edges.vao);
-                gl.drawElements(gl.TRIANGLES, model.edges.count, gl.UNSIGNED_INT, 0);
-            }
+            gl.uniform1f(u.uCameraDistance, style.cameraDistance);
+            gl.uniform1f(u.uStrokeWidth, style.strokeWidth * supersample);
+            gl.uniform1f(u.uInkOpacity, style.inkOpacity);
+            gl.uniform1f(u.uArtistic, 1);
+            gl.bindVertexArray(model.edges.vao);
+            gl.drawElements(gl.TRIANGLES, model.edges.count, gl.UNSIGNED_INT, 0);
         }
 
         // Pass 2 — optical depth of the glass in front of whatever the ink left.
@@ -497,24 +572,60 @@ export const createRenderer = (canvas, options = {}) => {
         gl.depthMask(false);
         gl.blendFunc(gl.ONE, gl.ONE);
 
-        if (style.showFacets) {
-            gl.useProgram(facetProgram.program);
-            const u = facetProgram.uniforms;
-            gl.uniformMatrix4fv(u.uRotation4d, false, rotation4d);
-            gl.uniformMatrix4fv(u.uViewProjection, false, vp);
+        const glassUniforms = (program, opacity) => {
+            const u = program.uniforms;
             gl.uniform3f(u.uEye, 0, 0, style.cameraDistance);
             gl.uniform3fv(u.uBaseColor, style.base);
             gl.uniform3fv(u.uRimColor, style.rim);
             const L = style.light, n = Math.hypot(L[0], L[1], L[2]) || 1;
             gl.uniform3f(u.uLight, L[0]/n, L[1]/n, L[2]/n);
-            gl.uniform1f(u.uOpacity, style.opacity);
+            gl.uniform1f(u.uOpacity, opacity);
             gl.uniform1f(u.uRimOpacity, style.rimOpacity);
             gl.uniform1f(u.uTauScale, tauScale);
+        };
+
+        if (showTorus && style.torusSurface) {
+            gl.useProgram(torusSurfaceProgram.program);
+            gl.uniformMatrix4fv(torusSurfaceProgram.uniforms.uRotation4d, false, rotation4d);
+            gl.uniformMatrix4fv(torusSurfaceProgram.uniforms.uViewProjection, false, vp);
+            glassUniforms(torusSurfaceProgram, style.torusSurfaceOpacity);
+            gl.bindVertexArray(torusSurface.vao);
+            gl.drawElements(gl.TRIANGLES, torusSurface.count, gl.UNSIGNED_INT, 0);
+        }
+
+        if (style.showFacets) {
+            gl.useProgram(facetProgram.program);
+            const u = facetProgram.uniforms;
+            gl.uniformMatrix4fv(u.uRotation4d, false, rotation4d);
+            gl.uniformMatrix4fv(u.uViewProjection, false, vp);
+            glassUniforms(facetProgram, style.opacity);
             gl.bindVertexArray(model.facets.vao);
             gl.drawElements(gl.TRIANGLES, model.facets.count, gl.UNSIGNED_INT, 0);
         }
 
-        // Pass 3 — resolve to the canvas.
+        // Pass 3 — the torus guide, as light rather than ink.  No depth test: a
+        // guide you cannot find is no guide, so it reads through the figure.
+        gl.bindFramebuffer(gl.FRAMEBUFFER, targets.glowFbo);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        if (showTorus) {
+            gl.disable(gl.DEPTH_TEST);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.useProgram(neonProgram.program);
+            const u = neonProgram.uniforms;
+            gl.uniformMatrix4fv(u.uRotation4d, false, rotation4d);
+            gl.uniformMatrix4fv(u.uViewProjection, false, vp);
+            gl.uniform2fv(u.uViewport, size);
+            gl.uniform1f(u.uCameraDistance, style.cameraDistance);
+            gl.uniform1f(u.uStrokeWidth, style.torusWidth * supersample);
+            gl.uniform1f(u.uInkOpacity, style.torusOpacity);
+            gl.uniform1f(u.uArtistic, 0);           // an even tube, not a brush stroke
+            gl.uniform3fv(u.uTorusColor, style.torusColor);
+            gl.bindVertexArray(torus.vao);
+            gl.drawElements(gl.TRIANGLES, torus.count, gl.UNSIGNED_INT, 0);
+        }
+
+        // Pass 4 — resolve to the canvas.
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.disable(gl.DEPTH_TEST);
@@ -522,8 +633,10 @@ export const createRenderer = (canvas, options = {}) => {
         gl.useProgram(compositeProgram.program);
         gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets.ink);
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, targets.accum);
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, targets.glow);
         gl.uniform1i(compositeProgram.uniforms.uInk, 0);
         gl.uniform1i(compositeProgram.uniforms.uAccum, 1);
+        gl.uniform1i(compositeProgram.uniforms.uGlow, 2);
         gl.uniform1f(compositeProgram.uniforms.uTauScale, tauScale);
         gl.uniform1i(compositeProgram.uniforms.uSamples, supersample);
         gl.bindVertexArray(emptyVao);

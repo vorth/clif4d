@@ -9,7 +9,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build, POLYCHORA, orientForProjection } from './polychora.js';
-import { buildFacets, buildEdges, buildTorusWireframe, faceNormal, facetLevels, fitCameraDistance } from './geometry.js';
+import { buildFacets, buildEdges, buildTorusWireframe, buildTorusSurface,
+         faceNormal, facetLevels, fitCameraDistance } from './geometry.js';
 
 const dot = (a, b) => a.reduce((s, c, i) => s + c * b[i], 0);
 const norm = (v) => Math.hypot(...v);
@@ -259,3 +260,49 @@ function data4(buffer, offset, at) {
     return [buffer.data[offset+at], buffer.data[offset+at+1],
             buffer.data[offset+at+2], buffer.data[offset+at+3]];
 }
+
+test('the torus surface grid is on the Clifford torus, with S^3 normals', () => {
+    const { data, indices, vertexCount, stride } = buildTorusSurface({ rings: 16, segments: 16 });
+    assert.equal(vertexCount, 256);
+    assert.equal(indices.length, 256 * 6);
+    assert.ok(Math.max(...indices) < vertexCount);
+    for (let i = 0; i < vertexCount; i++) {
+        const k = i * stride;
+        const q = [data[k], data[k+1], data[k+2], data[k+3]];
+        const n = [data[k+4], data[k+5], data[k+6], data[k+7]];
+        assert.ok(Math.abs(Math.hypot(q[0], q[1]) - Math.SQRT1_2) < 1e-6);
+        assert.ok(Math.abs(Math.hypot(q[2], q[3]) - Math.SQRT1_2) < 1e-6);
+        assert.ok(Math.abs(norm(n) - 1) < 1e-6);
+        assert.ok(Math.abs(dot(q, n)) < 1e-6, 'normal is not tangent to S^3');
+        // and orthogonal to both core directions, which are the surface tangents
+        assert.ok(Math.abs(dot(n, [-q[1], q[0], 0, 0])) < 1e-6);
+        assert.ok(Math.abs(dot(n, [0, 0, -q[3], q[2]])) < 1e-6);
+    }
+});
+
+test('pushing the S^3 normal through the projection gives the surface normal in 3-space', () => {
+    // What TORUS_SURFACE_VS computes, checked against a normal taken numerically
+    // from the projected surface.  This is the step that makes the torus shade
+    // correctly however coarsely it is cut.
+    const r = Math.SQRT1_2;
+    const at = (a, b) => [r*Math.cos(a), r*Math.sin(a), r*Math.cos(b), r*Math.sin(b)];
+    const project = (q) => [q[0]/(1 - q[3]), q[1]/(1 - q[3]), q[2]/(1 - q[3])];
+    const cross = (u, v) => [u[1]*v[2] - u[2]*v[1], u[2]*v[0] - u[0]*v[2], u[0]*v[1] - u[1]*v[0]];
+    const unit = (v) => { const l = norm(v); return v.map((c) => c / l); };
+
+    for (const a of [0.3, 1.1, 2.7, 4.4]) for (const b of [0.2, 1.9, 3.3, 5.5]) {
+        const q = at(a, b);
+        const n = [r*Math.cos(a), r*Math.sin(a), -r*Math.cos(b), -r*Math.sin(b)];
+        const d = 1 - q[3];
+        const analytic = unit([0, 1, 2].map((i) => n[i]/d + q[i]*n[3]/(d*d)));
+
+        const h = 1e-5;
+        const da = project(at(a + h, b)).map((c, i) => (c - project(at(a - h, b))[i]) / (2*h));
+        const db = project(at(a, b + h)).map((c, i) => (c - project(at(a, b - h))[i]) / (2*h));
+        const numeric = unit(cross(da, db));
+
+        const agreement = Math.abs(dot(analytic, numeric));
+        assert.ok(agreement > 1 - 1e-6,
+                  `normals disagree at (${a}, ${b}): |cos| = ${agreement}`);
+    }
+});

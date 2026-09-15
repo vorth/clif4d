@@ -48,9 +48,17 @@
       </select>
     </label>
 
-    <label>Torus weight
-      <input type="range" id="torus-opacity" min="0.05" max="1" step="0.05" value="0.5">
+    <label>Torus glow
+      <input type="range" id="torus-opacity" min="0.05" max="1" step="0.05" value="0.85">
     </label>
+
+    <label>Torus colour
+      <input type="color" id="torus-colour">
+    </label>
+
+    <div class="row">
+      <label class="check"><input type="checkbox" id="torus-surface"> torus surface</label>
+    </div>
 
     <div class="row">
       <label class="check"><input type="checkbox" id="facets" checked> facets</label>
@@ -64,7 +72,7 @@
     <p class="help">
       Drag to tumble · <kbd>shift</kbd> drag to rotate into the fourth axis ·
       <kbd>alt</kbd> drag for the XY and ZW planes ·
-      <kbd>shift</kbd>+<kbd>alt</kbd> to drag the Clifford torus itself ·
+      hold <kbd>shift</kbd>+<kbd>alt</kbd> to see the Clifford torus and drag it ·
       scroll to zoom.
     </p>
   </aside>
