@@ -270,3 +270,40 @@ export const buildTorusWireframe = ({ lines = 20, samples = 72 } = {}) => {
     }
     return buildEdges({ edges }, { vertices, samples: 2, strokes: 1 });
 };
+
+/**
+ * buildTorusSurface({ rings, segments })
+ *
+ * The Clifford torus as a surface rather than a wireframe: a grid in its two
+ * core angles, closed in both directions.
+ *
+ * Per vertex, the point on S^3 and the surface's unit normal *within* S^3.  At
+ * (cos a, sin a, cos b, sin b)/sqrt2 the two tangents are d/da and d/db, and
+ * the remaining direction orthogonal to those and to the point itself is
+ * (cos a, sin a, -cos b, -sin b)/sqrt2.  Stereographic projection is conformal,
+ * so it carries normals to normals: the shader pushes that vector through the
+ * projection's derivative and gets the surface normal in 3-space exactly, with
+ * no dependence on how finely this grid is cut.
+ */
+export const buildTorusSurface = ({ rings = 96, segments = 96 } = {}) => {
+    const r = Math.SQRT1_2;
+    const data = new Float32Array(rings * segments * 8);
+    let k = 0;
+    for (let i = 0; i < rings; i++) {
+        const a = (i / rings) * 2 * Math.PI, ca = Math.cos(a), sa = Math.sin(a);
+        for (let j = 0; j < segments; j++) {
+            const b = (j / segments) * 2 * Math.PI, cb = Math.cos(b), sb = Math.sin(b);
+            data[k++] = r*ca;  data[k++] = r*sa;  data[k++] = r*cb;  data[k++] = r*sb;
+            data[k++] = r*ca;  data[k++] = r*sa;  data[k++] = -r*cb; data[k++] = -r*sb;
+        }
+    }
+    const indices = new Uint32Array(rings * segments * 6);
+    let n = 0;
+    const at = (i, j) => (i % rings) * segments + (j % segments);
+    for (let i = 0; i < rings; i++)
+        for (let j = 0; j < segments; j++) {
+            indices[n++] = at(i, j);     indices[n++] = at(i + 1, j); indices[n++] = at(i + 1, j + 1);
+            indices[n++] = at(i, j);     indices[n++] = at(i + 1, j + 1); indices[n++] = at(i, j + 1);
+        }
+    return { data, indices, vertexCount: rings * segments, stride: 8 };
+};

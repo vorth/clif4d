@@ -71,11 +71,22 @@ drawn.  The edge pass runs first and writes depth; the facet pass depth-tests
 against it, which is what lets glass in front of a line veil it while the lines
 in front keep their bite.
 
-**The Clifford torus** is drawn with the same ribbon path as the edges, with
-the taper and grain switched off, because a hardware GL line is one pixel wide
-and all but vanishes once the supersampled buffer is resolved.  It writes no
-depth — it is a guide, not an occluder — but the glass in front of it still
-veils it, so it sits in the scene rather than on top of it.
+**The Clifford torus is light, not ink.**  It uses the same ribbon path as the
+edges with the taper and grain switched off, but a different fragment shader:
+a blown-out core inside a soft coloured bloom, dimming with distance, in a
+colour you choose.  It goes to its own buffer and is added *after* the glass is
+composited, rather than being veiled by it — a guide you cannot find through a
+120-cell is no guide.  Holding shift+alt shows it, so the first drag is not
+made blind.
+
+It can also be given a surface, as glass, in the accumulation pass with
+everything else, in the same colour as its guide tubes — so it stays distinct
+from the polytope it sits inside.  Its normal is not a sphere's, so it comes from the torus's
+normal within S³ — at (cos a, sin a, cos b, sin b)/√2 that is
+(cos a, sin a, -cos b, -sin b)/√2 — pushed through the derivative of the
+projection.  Since stereographic projection is conformal it carries normals to
+normals, so this is exact, and the grid can be as coarse as the silhouette
+allows.
 
 **Orientation.**  Each polytope is turned so the projection pole sits in a deep
 hole of its vertex set — the centre of a cell.  That keeps any vertex off the
