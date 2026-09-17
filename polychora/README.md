@@ -80,7 +80,8 @@ composited, rather than being veiled by it — a guide you cannot find through a
 made blind.
 
 It can also be given a surface, as glass, in the accumulation pass with
-everything else.  Its normal is not a sphere's, so it comes from the torus's
+everything else, in the same colour as its guide tubes — so it stays distinct
+from the polytope it sits inside.  Its normal is not a sphere's, so it comes from the torus's
 normal within S³ — at (cos a, sin a, cos b, sin b)/√2 that is
 (cos a, sin a, -cos b, -sin b)/√2 — pushed through the derivative of the
 projection.  Since stereographic projection is conformal it carries normals to

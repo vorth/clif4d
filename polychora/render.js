@@ -335,7 +335,7 @@ export const DEFAULT_STYLE = {
     inkOpacity: 1.0,
     torusWidth: 5.0,          // pixels; the Clifford torus guide lines, as lit tubes
     torusOpacity: 0.85,
-    torusColor: [0.10, 0.72, 0.85],
+    torusColor: [0.10, 0.72, 0.85],   // the guide tubes and the torus glass
     torusSurface: false,      // the torus as glass as well as wire
     torusSurfaceOpacity: 0.05,
     targetEdge: 9,            // facet tessellation: wanted triangle edge, in pixels
@@ -572,10 +572,12 @@ export const createRenderer = (canvas, options = {}) => {
         gl.depthMask(false);
         gl.blendFunc(gl.ONE, gl.ONE);
 
-        const glassUniforms = (program, opacity) => {
+        // The torus surface passes its own colour, so it can be told apart from
+        // the polytope it sits inside.
+        const glassUniforms = (program, opacity, baseColor = style.base) => {
             const u = program.uniforms;
             gl.uniform3f(u.uEye, 0, 0, style.cameraDistance);
-            gl.uniform3fv(u.uBaseColor, style.base);
+            gl.uniform3fv(u.uBaseColor, baseColor);
             gl.uniform3fv(u.uRimColor, style.rim);
             const L = style.light, n = Math.hypot(L[0], L[1], L[2]) || 1;
             gl.uniform3f(u.uLight, L[0]/n, L[1]/n, L[2]/n);
@@ -588,7 +590,7 @@ export const createRenderer = (canvas, options = {}) => {
             gl.useProgram(torusSurfaceProgram.program);
             gl.uniformMatrix4fv(torusSurfaceProgram.uniforms.uRotation4d, false, rotation4d);
             gl.uniformMatrix4fv(torusSurfaceProgram.uniforms.uViewProjection, false, vp);
-            glassUniforms(torusSurfaceProgram, style.torusSurfaceOpacity);
+            glassUniforms(torusSurfaceProgram, style.torusSurfaceOpacity, style.torusColor);
             gl.bindVertexArray(torusSurface.vao);
             gl.drawElements(gl.TRIANGLES, torusSurface.count, gl.UNSIGNED_INT, 0);
         }
