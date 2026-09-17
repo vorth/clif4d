@@ -1,0 +1,19 @@
+Running 'Ready to work' list!
+
+* Add modes for modifiers, rather than only controlling with modifier keys
+* Make it work on phone (the modes above probably required for this)
+* Figure out how to remove the 'master' branch and make 'main' the default
+* Allow dragging to set the model in motion
+* Way to reset the view
+* Add an example showing how you can do different plane mappings (e.g. we do xy-xz but we could do xy-zw and avoid commuting)
+* Cleanup copied drag code in clif4d\threejs\2b21d929550f550f@386.js
+
+Bigger thought items (needs thought/specification)
+* Controling the projection point (stereographic -> gnomonic -> ...) How do we want to intuitively do this?
+* Snapping, Centering. This could be the model snapping to coordinates, the torus snapping to the model, ...?
+* In-space views (making the lookFrom the origin of an azimuthal model)
+* Adapt to hyperbolic geometry (with a Dupin cyclide surface rather than a Clifford torus)
+
+Roice's list for the 'glass and ink' section
+* Render the poles of the torus.
+* Allow drawing edges fine rather than sketchy (maybe add an opt-in "artistic" checkbox)
